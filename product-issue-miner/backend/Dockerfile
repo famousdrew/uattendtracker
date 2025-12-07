@@ -16,13 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
-COPY requirements.txt .
+# Note: paths are relative to repo root for Railway builds
+COPY product-issue-miner/backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app ./app
-COPY alembic ./alembic
-COPY alembic.ini .
+COPY product-issue-miner/backend/app ./app
+COPY product-issue-miner/backend/alembic ./alembic
+COPY product-issue-miner/backend/alembic.ini .
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

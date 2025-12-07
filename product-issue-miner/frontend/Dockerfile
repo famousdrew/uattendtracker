@@ -4,11 +4,12 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Install dependencies
-COPY package*.json ./
+# Note: paths are relative to repo root for Railway builds
+COPY product-issue-miner/frontend/package*.json ./
 RUN npm ci
 
 # Copy application code
-COPY . .
+COPY product-issue-miner/frontend/ .
 
 # Build Next.js application with standalone output
 RUN npm run build
