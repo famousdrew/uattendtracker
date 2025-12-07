@@ -66,23 +66,28 @@ async def trigger_sync(
         global _sync_running, _sync_progress
         try:
             _sync_progress = "Initializing sync service..."
-            sync_service = get_sync_service()
 
             # Create new session for background task
             from app.database import AsyncSessionLocal
             async with AsyncSessionLocal() as bg_session:
+                # Create sync service with the session
+                sync_service = get_sync_service(bg_session)
+
                 if backfill_days:
                     _sync_progress = f"Running backfill sync ({backfill_days} days)..."
-                    await sync_service.backfill_sync(bg_session, backfill_days)
                 else:
                     _sync_progress = "Running incremental sync..."
-                    await sync_service.incremental_sync(bg_session)
 
-            _sync_progress = "Sync completed successfully"
+                # sync_tickets handles both backfill and incremental modes
+                result = await sync_service.sync_tickets(backfill_days=backfill_days)
+                _sync_progress = f"Sync completed: {result.get('tickets_synced', 0)} tickets synced"
+
         except Exception as e:
             _sync_progress = f"Sync failed: {str(e)}"
-            # Log error in production
+            # Log error with traceback in production
+            import traceback
             print(f"Sync error: {e}")
+            traceback.print_exc()
         finally:
             _sync_running = False
 
