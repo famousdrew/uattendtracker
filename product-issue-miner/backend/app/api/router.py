@@ -4,7 +4,7 @@ Main API router aggregating all endpoint modules.
 
 from fastapi import APIRouter
 
-from app.api import issues, clusters, tickets, sync, export
+from app.api import issues, clusters, tickets, sync, export, debug
 
 # Create main API router with /api prefix
 api_router = APIRouter(prefix="/api")
@@ -15,3 +15,4 @@ api_router.include_router(clusters.router)
 api_router.include_router(tickets.router)
 api_router.include_router(sync.router)
 api_router.include_router(export.router)
+api_router.include_router(debug.router)
