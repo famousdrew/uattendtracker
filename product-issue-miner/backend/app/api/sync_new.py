@@ -14,41 +14,6 @@ from app.models import SyncState, Ticket, ExtractedIssue
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
-@router.get("/debug/zendesk")
-async def debug_zendesk(
-    _: bool = Depends(verify_password)
-):
-    """
-    Debug endpoint to test Zendesk connectivity and search.
-    """
-    from app.services.zendesk import get_zendesk_client
-    from app.config import settings
-    from datetime import timedelta
-
-    results = {"zendesk_subdomain": settings.ZENDESK_SUBDOMAIN, "brand_id": settings.ZENDESK_BRAND_ID, "tests": []}
-    client = get_zendesk_client()
-    try:
-        await client._ensure_client()
-        start_date = datetime.utcnow() - timedelta(days=7)
-        query = f"type:ticket updated>{start_date.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-        try:
-            resp = await client.search_tickets(query, page=1, per_page=5)
-            results["tests"].append({"name": "Search all brands", "query": query, "success": True, "count": resp.get("count", 0), "sample": [{"id": t.get("id"), "subject": (t.get("subject") or "")[:40]} for t in resp.get("results", [])[:3]]})
-        except Exception as e:
-            results["tests"].append({"name": "Search all brands", "success": False, "error": str(e)})
-        if settings.ZENDESK_BRAND_ID:
-            query2 = f"type:ticket updated>{start_date.strftime('%Y-%m-%dT%H:%M:%SZ')} brand:{settings.ZENDESK_BRAND_ID}"
-            try:
-                resp2 = await client.search_tickets(query2, page=1, per_page=5)
-                results["tests"].append({"name": "Search with brand", "query": query2, "success": True, "count": resp2.get("count", 0), "sample": [{"id": t.get("id"), "subject": (t.get("subject") or "")[:40]} for t in resp2.get("results", [])[:3]]})
-            except Exception as e:
-                results["tests"].append({"name": "Search with brand", "success": False, "error": str(e)})
-    except Exception as e:
-        results["error"] = str(e)
-    finally:
-        await client.close()
-    return results
-
 # Global flag to track if sync is running
 # In production, use Redis or database for distributed systems
 _sync_running = False
