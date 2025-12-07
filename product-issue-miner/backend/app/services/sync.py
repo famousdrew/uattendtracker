@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.models import Ticket, SyncState
 from app.services.zendesk import ZendeskClient, get_zendesk_client
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,11 @@ class SyncService:
 
             # Build search query for Zendesk
             query = f"type:ticket updated>{start_date.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+            
+            # Add brand filter if configured
+            if settings.ZENDESK_BRAND_ID:
+                query = f"{query} brand:{settings.ZENDESK_BRAND_ID}"
+                logger.info(f"Filtering by brand ID: {settings.ZENDESK_BRAND_ID}")
 
             # Iterate through paginated results
             async for ticket_batch in self.zendesk.paginate_search(query):

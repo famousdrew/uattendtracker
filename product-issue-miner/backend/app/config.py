@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     ZENDESK_API_TOKEN: str = Field(
         description="Zendesk API token for authentication"
     )
+    ZENDESK_BRAND_ID: Optional[int] = Field(
+        default=None,
+        description="Zendesk brand ID to filter tickets (optional)"
+    )
 
     # Anthropic API Configuration
     ANTHROPIC_API_KEY: str = Field(
