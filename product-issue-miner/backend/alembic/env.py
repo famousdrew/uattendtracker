@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # Import the Base model and all models
-from app.database import Base
+from app.database import Base, get_async_database_url
 from app.config import settings
 
 # This is the Alembic Config object
@@ -20,7 +20,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set the SQLAlchemy URL from settings
+# Set the SQLAlchemy URL from settings (for offline mode)
 config.set_main_option("sqlalchemy.url", settings.database_url_sync)
 
 # Add your model's MetaData object here for 'autogenerate' support
@@ -72,9 +72,11 @@ async def run_async_migrations() -> None:
     In this scenario we need to create an Engine
     and associate a connection with the context.
     """
-    # Use synchronous URL for Alembic
+    # Use async URL for async engine
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = settings.database_url_sync
+    # Convert postgresql:// to postgresql+asyncpg:// for async driver
+    async_url = get_async_database_url(settings.DATABASE_URL)
+    configuration["sqlalchemy.url"] = async_url
 
     connectable = async_engine_from_config(
         configuration,
