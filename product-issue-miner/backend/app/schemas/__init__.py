@@ -10,6 +10,10 @@ from app.schemas.cluster import (
 )
 from app.schemas.sync import SyncStatusResponse, SyncTriggerRequest, SyncTriggerResponse
 
+# Rebuild models with forward references after all imports
+ClusterDetailResponse.model_rebuild()
+TicketDetailResponse.model_rebuild()
+
 __all__ = [
     # Common
     "PaginatedResponse",
