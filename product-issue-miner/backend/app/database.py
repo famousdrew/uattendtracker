@@ -20,9 +20,16 @@ class Base(DeclarativeBase):
     pass
 
 
+def get_async_database_url(url: str) -> str:
+    """Convert standard postgresql:// URL to async postgresql+asyncpg:// URL."""
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
 # Create async engine
 engine: AsyncEngine = create_async_engine(
-    settings.DATABASE_URL,
+    get_async_database_url(settings.DATABASE_URL),
     echo=False,  # Set to True for SQL query logging in development
     future=True,
     pool_pre_ping=True,  # Verify connections before using them
