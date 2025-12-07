@@ -22,6 +22,18 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def parse_zendesk_datetime(dt_string: str) -> Optional[datetime]:
+    if not dt_string:
+        return None
+    try:
+        if dt_string.endswith("Z"):
+            dt_string = dt_string[:-1]
+        return datetime.fromisoformat(dt_string)
+    except (ValueError, AttributeError) as e:
+        logger.warning(f"Could not parse datetime: {e}")
+        return None
+
+
 class SyncService:
     """Handles syncing tickets from Zendesk to the database."""
 
@@ -173,6 +185,10 @@ class SyncService:
             except Exception as e:
                 logger.warning(f"Could not fetch organization {zendesk_org_id}: {e}")
 
+        # Parse datetime strings to datetime objects
+        created_at = parse_zendesk_datetime(ticket_info.get('created_at'))
+        updated_at = parse_zendesk_datetime(ticket_info.get('updated_at'))
+
         stmt = insert(Ticket).values(
             zendesk_ticket_id=ticket_info['id'],
             subject=ticket_info.get('subject'),
@@ -185,8 +201,8 @@ class SyncService:
             tags=ticket_info.get('tags', []),
             status=ticket_info.get('status'),
             priority=ticket_info.get('priority'),
-            ticket_created_at=ticket_info['created_at'],
-            ticket_updated_at=ticket_info['updated_at'],
+            ticket_created_at=created_at,
+            ticket_updated_at=updated_at,
             synced_at=datetime.utcnow()
         ).on_conflict_do_update(
             index_elements=['zendesk_ticket_id'],
