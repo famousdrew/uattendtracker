@@ -1,0 +1,19 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Port configuration
+port = 3000
+
+# Health check configuration
+healthcheckPath = "/"
+healthcheckTimeout = 30
+healthcheckInterval = 10
+
+# Restart policy
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# Resource allocation
+startCommand = "node server.js"
