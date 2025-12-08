@@ -6,7 +6,7 @@ WORKDIR /app
 COPY product-issue-miner/mvp/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Copy application (bust cache: v2)
 COPY product-issue-miner/mvp/ .
 
 # Create data directory for SQLite
