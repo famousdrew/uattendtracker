@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from config import Config
 from zendesk_client import ZendeskClient
-from storage import Storage
+from storage import get_storage
 from analyzer import Analyzer
 
 
@@ -105,7 +105,7 @@ def run_sync_and_analyze(days: int, limit: int):
 
     try:
         client = ZendeskClient()
-        storage = Storage()
+        storage = get_storage()
         analyzer = Analyzer()
 
         # Sync tickets
@@ -175,14 +175,14 @@ def get_sync_status():
 @app.get("/api/summary")
 def get_summary():
     """Get issue summary statistics."""
-    storage = Storage()
+    storage = get_storage()
     return storage.get_issue_summary()
 
 
 @app.get("/api/issues")
 def list_issues(limit: int = 50, category: str = None, severity: str = None):
     """List extracted issues."""
-    storage = Storage()
+    storage = get_storage()
     issues = storage.get_all_issues()
 
     if category:
@@ -196,7 +196,7 @@ def list_issues(limit: int = 50, category: str = None, severity: str = None):
 @app.get("/api/tickets")
 def list_tickets(limit: int = 50):
     """List synced tickets."""
-    storage = Storage()
+    storage = get_storage()
     return storage.get_all_tickets()[:limit]
 
 

@@ -16,7 +16,7 @@ from rich.panel import Panel
 
 from config import Config
 from zendesk_client import ZendeskClient
-from storage import Storage
+from storage import get_storage
 from analyzer import Analyzer
 
 console = Console()
@@ -65,7 +65,7 @@ def cmd_sync(args):
         return
 
     client = ZendeskClient()
-    storage = Storage()
+    storage = get_storage()
 
     console.print(f"\nSyncing tickets from last {args.days} days...\n")
 
@@ -97,7 +97,7 @@ def cmd_analyze(args):
         console.print(f"[red]Missing config: {missing}[/red]")
         return
 
-    storage = Storage()
+    storage = get_storage()
     analyzer = Analyzer()
 
     # Get unanalyzed tickets
@@ -147,7 +147,7 @@ def cmd_analyze(args):
 
 def cmd_report(args):
     """Generate a summary report."""
-    storage = Storage()
+    storage = get_storage()
     summary = storage.get_issue_summary()
 
     console.print("\n")
@@ -210,7 +210,7 @@ def cmd_report(args):
 
 def cmd_clear(args):
     """Clear stored data."""
-    storage = Storage()
+    storage = get_storage()
 
     if args.issues:
         storage.clear_issues()

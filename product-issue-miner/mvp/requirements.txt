@@ -5,3 +5,4 @@ python-dotenv>=1.0.0   # Environment variables
 rich>=13.0.0           # Nice CLI output
 fastapi>=0.115.0       # Web API
 uvicorn>=0.32.0        # ASGI server
+psycopg2-binary>=2.9.9 # PostgreSQL driver
