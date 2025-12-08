@@ -2,53 +2,76 @@
 import json
 from anthropic import Anthropic
 from config import Config
+from knowledge_base import get_product_context
 
 
-SYSTEM_PROMPT = """You are an expert product analyst examining support tickets for a time & attendance / payroll SaaS product.
+def build_system_prompt() -> str:
+    """Build system prompt with product knowledge."""
+    product_context = get_product_context()
 
-Your job is to extract product issues from support tickets. For each ticket, identify:
-1. Whether it contains a product issue (bug, friction point, feature request, etc.)
-2. The category of issue
-3. The severity
-4. A clear summary
+    return f"""You are an expert product analyst examining support tickets for uAttend, a time & attendance and payroll SaaS platform.
 
-Categories:
-- TIME_TRACKING: Clock in/out, timesheets, schedules, overtime
-- PAYROLL: Pay calculations, deductions, pay periods, tax
-- REPORTING: Reports, exports, analytics
-- INTEGRATIONS: Third-party connections, data sync
-- USER_MANAGEMENT: Accounts, permissions, authentication
-- MOBILE_APP: Mobile-specific issues
-- SETTINGS: Configuration, preferences
-- OTHER: Anything else
+{product_context}
 
-Issue Types:
+=== YOUR TASK ===
+
+Analyze support tickets to extract product issues. For each ticket:
+1. Determine if it contains a genuine product issue (not just a how-to question)
+2. Categorize it accurately based on the product knowledge above
+3. Assess severity based on business impact
+4. Provide actionable summaries
+
+CATEGORIES (use these exact values):
+- TIMECLOCK_HARDWARE: Physical device issues - connectivity, enrollment, display, power
+- PUNCH_SYNC: Punches not syncing between device and cloud, missing punches
+- TIMECARD: Timecard viewing, editing, approvals, missing time
+- SCHEDULING: Employee schedules, shifts, coverage
+- PAYROLL: Pay calculations, taxes, deductions, pay periods
+- MOBILE_APP: Mobile app specific - login, GPS, notifications
+- WEB_DASHBOARD: Web interface issues for managers/admins
+- REPORTS: Report generation, exports, analytics
+- INTEGRATIONS: Third-party connections, data sync with other systems
+- USER_ACCESS: Login, permissions, SSO, password issues
+- EMPLOYEE_MANAGEMENT: Adding/removing employees, departments, job codes
+- BILLING: Subscription, invoices, pricing
+- OTHER: Doesn't fit other categories
+
+ISSUE TYPES:
 - bug: Something is broken or not working as expected
-- friction: Works but is difficult/confusing to use
-- feature_request: User wants new functionality
-- documentation_gap: Missing or unclear documentation
-- data_issue: Data inconsistency or corruption
+- friction: Works but is difficult, confusing, or unintuitive
+- feature_request: User wants new functionality that doesn't exist
+- data_issue: Data inconsistency, missing data, sync problems
+- documentation_gap: User confused due to missing/unclear documentation
+- configuration: Settings not working as expected or unclear
 
-Severity:
-- critical: Blocking work, data loss, security issue
-- high: Major functionality impacted, workaround is difficult
-- medium: Noticeable impact but workaround exists
-- low: Minor inconvenience
+SEVERITY (based on business impact):
+- critical: Employees can't clock in/out, payroll can't run, data loss
+- high: Major functionality broken, significant workaround needed
+- medium: Noticeable impact but reasonable workaround exists
+- low: Minor inconvenience, cosmetic issues
 
-Respond with JSON only. If no product issue is found, return {"issues": []}.
-If issues are found, return:
-{
+IMPORTANT GUIDELINES:
+- Only extract PRODUCT issues, not general support questions
+- A "how do I..." question is NOT an issue unless it reveals a UX problem
+- Be specific in summaries - include device models, error messages, affected features
+- If multiple issues exist in one ticket, extract each separately
+- Confidence should reflect how certain you are this is a real product issue
+
+Respond with JSON only. If no product issue found: {{"issues": []}}
+
+For issues found:
+{{
     "issues": [
-        {
-            "category": "CATEGORY",
-            "issue_type": "type",
-            "severity": "severity",
-            "summary": "One-line summary of the issue",
-            "detail": "More detailed explanation",
+        {{
+            "category": "CATEGORY_FROM_LIST",
+            "issue_type": "type_from_list",
+            "severity": "severity_from_list",
+            "summary": "Specific one-line summary with key details",
+            "detail": "Fuller explanation including context, impact, and any error messages",
             "confidence": 0.0-1.0
-        }
+        }}
     ]
-}"""
+}}"""
 
 
 class Analyzer:
@@ -56,6 +79,14 @@ class Analyzer:
 
     def __init__(self):
         self.client = Anthropic(api_key=Config.ANTHROPIC_API_KEY)
+        self._system_prompt = None
+
+    @property
+    def system_prompt(self) -> str:
+        """Lazy-load system prompt with knowledge base."""
+        if self._system_prompt is None:
+            self._system_prompt = build_system_prompt()
+        return self._system_prompt
 
     def analyze_ticket(self, subject: str, description: str, comments: str = None) -> list[dict]:
         """Analyze a single ticket and extract issues."""
@@ -68,7 +99,7 @@ class Analyzer:
             response = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=1024,
-                system=SYSTEM_PROMPT,
+                system=self.system_prompt,
                 messages=[
                     {"role": "user", "content": content}
                 ]
@@ -104,20 +135,43 @@ if __name__ == "__main__":
 
     analyzer = Analyzer()
 
-    # Test with a sample ticket
-    test_subject = "Clock in button not working on mobile"
-    test_description = """
-    When I try to clock in using the mobile app, the button doesn't respond.
-    This started happening after the latest update. I have to use the web
-    version instead which is really inconvenient for our field workers.
-    """
+    rprint("[blue]System prompt preview (first 2000 chars):[/blue]")
+    rprint(analyzer.system_prompt[:2000] + "...\n")
 
-    rprint("[blue]Testing Claude analysis...[/blue]")
-    issues = analyzer.analyze_ticket(test_subject, test_description)
+    # Test with sample tickets
+    test_cases = [
+        {
+            "subject": "BN6500 not connecting to WiFi",
+            "description": """
+            Our BN6500 timeclock was working fine but after a power outage it won't connect
+            to WiFi anymore. We've tried resetting it but it just shows "Connecting..." and
+            never actually connects. Our employees can't clock in.
+            """
+        },
+        {
+            "subject": "How do I add a new employee?",
+            "description": """
+            I'm new to uAttend and need to add some employees. Where do I go to do this?
+            """
+        },
+        {
+            "subject": "Payroll hours don't match timecards",
+            "description": """
+            When I run payroll for last week, the hours shown don't match what's on the
+            employees' timecards. For example, John shows 42 hours on his timecard but
+            payroll only has 38 hours. This is happening for multiple employees.
+            """
+        }
+    ]
 
-    if issues:
-        rprint(f"[green]Found {len(issues)} issue(s):[/green]")
-        for issue in issues:
-            rprint(f"  - [{issue['severity']}] {issue['category']}: {issue['summary']}")
-    else:
-        rprint("[yellow]No issues extracted[/yellow]")
+    for test in test_cases:
+        rprint(f"\n[yellow]Testing: {test['subject']}[/yellow]")
+        issues = analyzer.analyze_ticket(test["subject"], test["description"])
+
+        if issues:
+            rprint(f"[green]Found {len(issues)} issue(s):[/green]")
+            for issue in issues:
+                rprint(f"  [{issue['severity']}] {issue['category']}: {issue['summary']}")
+                rprint(f"    Type: {issue['issue_type']}, Confidence: {issue['confidence']}")
+        else:
+            rprint("[dim]No product issues extracted[/dim]")
