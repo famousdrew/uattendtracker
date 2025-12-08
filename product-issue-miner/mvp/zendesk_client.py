@@ -18,12 +18,12 @@ class ZendeskClient:
             response.raise_for_status()
             return response.json()
 
-    def fetch_tickets(self, days_back: int = 7, limit: int = 100) -> list[dict]:
-        """Fetch recent tickets, optionally filtered by brand."""
+    def fetch_tickets(self, days_back: int = 7) -> list[dict]:
+        """Fetch ALL tickets in date range, optionally filtered by brand."""
         since_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
         # Build search query
-        query_parts = [f"type:ticket", f"created>{since_date}"]
+        query_parts = ["type:ticket", f"created>{since_date}"]
         if Config.ZENDESK_BRAND_ID:
             query_parts.append(f"brand_id:{Config.ZENDESK_BRAND_ID}")
 
@@ -34,15 +34,12 @@ class ZendeskClient:
         params = {"query": query, "sort_by": "created_at", "sort_order": "desc"}
 
         with httpx.Client(auth=self.auth, timeout=30.0) as client:
-            while url and len(tickets) < limit:
+            while url:
                 response = client.get(url, params=params)
                 response.raise_for_status()
                 data = response.json()
 
-                for ticket in data.get("results", []):
-                    if len(tickets) >= limit:
-                        break
-                    tickets.append(ticket)
+                tickets.extend(data.get("results", []))
 
                 # Clear params for pagination (next_page includes them)
                 params = None
@@ -78,7 +75,7 @@ if __name__ == "__main__":
         exit(1)
 
     rprint("\n[blue]Fetching recent tickets...[/blue]")
-    tickets = client.fetch_tickets(days_back=7, limit=5)
+    tickets = client.fetch_tickets(days_back=7)
     rprint(f"[green]Found {len(tickets)} tickets[/green]")
 
     for t in tickets:

@@ -48,7 +48,6 @@ app.add_middleware(
 
 class SyncRequest(BaseModel):
     days: int = 7
-    limit: int = 100
 
 
 class SyncResponse(BaseModel):
@@ -100,7 +99,7 @@ def test_connections():
     return results
 
 
-def run_sync_and_analyze(days: int, limit: int):
+def run_sync_and_analyze(days: int):
     """Background task to sync and analyze tickets."""
     global sync_status
     sync_status["running"] = True
@@ -111,8 +110,8 @@ def run_sync_and_analyze(days: int, limit: int):
         storage = get_storage()
         analyzer = Analyzer()
 
-        # Sync tickets
-        tickets = client.fetch_tickets(days_back=days, limit=limit)
+        # Sync tickets - fetch ALL tickets in date range (no limit)
+        tickets = client.fetch_tickets(days_back=days)
         for ticket in tickets:
             try:
                 comments = client.get_ticket_comments(ticket["id"])
@@ -165,7 +164,7 @@ def trigger_sync(request: SyncRequest, background_tasks: BackgroundTasks):
     if sync_status["running"]:
         raise HTTPException(status_code=409, detail="Sync already in progress")
 
-    background_tasks.add_task(run_sync_and_analyze, request.days, request.limit)
+    background_tasks.add_task(run_sync_and_analyze, request.days)
     return {"status": "started", "message": "Sync started in background"}
 
 
