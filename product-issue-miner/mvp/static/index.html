@@ -25,154 +25,382 @@
     </script>
 </head>
 <body class="bg-slate-900 min-h-screen text-slate-100">
-    <div id="app" class="container mx-auto px-4 py-8 max-w-6xl">
+    <div id="app" class="container mx-auto px-4 py-8 max-w-7xl">
         <!-- Header -->
         <div class="mb-8">
             <h1 class="text-3xl font-bold text-white">Product Issue Miner</h1>
             <p class="text-slate-400">Extract and analyze product issues from Zendesk tickets</p>
         </div>
 
-        <!-- Sync Controls -->
-        <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-6">
-            <div class="flex items-center justify-between flex-wrap gap-4">
-                <div>
-                    <h2 class="text-lg font-semibold text-white">Sync Tickets</h2>
-                    <p class="text-sm text-slate-400">Fetch tickets from Zendesk and analyze with Claude</p>
+        <!-- Tab Navigation -->
+        <div class="flex gap-2 mb-6">
+            <button @click="activeTab = 'themes'"
+                    :class="activeTab === 'themes' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                    class="px-5 py-2.5 rounded-lg font-medium transition-colors">
+                Themes
+            </button>
+            <button @click="activeTab = 'issues'"
+                    :class="activeTab === 'issues' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                    class="px-5 py-2.5 rounded-lg font-medium transition-colors">
+                All Issues
+            </button>
+            <button @click="activeTab = 'sync'"
+                    :class="activeTab === 'sync' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                    class="px-5 py-2.5 rounded-lg font-medium transition-colors">
+                Sync & Settings
+            </button>
+        </div>
+
+        <!-- THEMES TAB -->
+        <div v-if="activeTab === 'themes'">
+            <!-- Theme Generation Controls -->
+            <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-6">
+                <div class="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                        <h2 class="text-lg font-semibold text-white">Product Themes</h2>
+                        <p class="text-sm text-slate-400">AI-generated themes from extracted issues (min 5 issues per theme)</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <select v-model="themeMode" class="bg-slate-700 border border-slate-600 text-slate-100 rounded-lg px-4 py-2">
+                            <option value="full">Full Regeneration</option>
+                            <option value="incremental">Incremental (new issues only)</option>
+                        </select>
+                        <button
+                            @click="generateThemes"
+                            :disabled="themeStatus.running"
+                            class="bg-purple-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-purple-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors">
+                            {{ themeStatus.running ? 'Generating...' : 'Generate Themes' }}
+                        </button>
+                    </div>
                 </div>
-                <div class="flex items-center gap-3">
-                    <select v-model="syncDays" class="bg-slate-700 border border-slate-600 text-slate-100 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                        <option value="1">Last 1 day</option>
-                        <option value="7">Last 7 days</option>
-                        <option value="14">Last 14 days</option>
-                        <option value="30">Last 30 days</option>
-                        <option value="60">Last 60 days</option>
-                        <option value="90">Last 90 days</option>
+                <div v-if="themeStatus.last_result" class="mt-4 p-3 bg-slate-700/50 rounded-lg text-sm">
+                    <span v-if="themeStatus.last_result.success" class="text-emerald-400">
+                        {{ themeStatus.last_result.themes_created }} themes created,
+                        {{ themeStatus.last_result.issues_themed }} issues themed
+                        <span v-if="themeStatus.last_result.issues_unthemed > 0" class="text-slate-400">
+                            ({{ themeStatus.last_result.issues_unthemed }} unthemed - below min threshold)
+                        </span>
+                    </span>
+                    <span v-else class="text-red-400">
+                        Generation failed: {{ themeStatus.last_result.error }}
+                    </span>
+                </div>
+            </div>
+
+            <!-- Theme Summary Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <div class="text-3xl font-bold text-purple-400">{{ themeSummary.total_themes }}</div>
+                    <div class="text-sm text-slate-400 mt-1">Total Themes</div>
+                </div>
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <div class="text-3xl font-bold text-emerald-400">{{ themeSummary.themed_issues }}</div>
+                    <div class="text-sm text-slate-400 mt-1">Themed Issues</div>
+                </div>
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <div class="text-3xl font-bold text-slate-400">{{ themeSummary.unthemed_issues }}</div>
+                    <div class="text-sm text-slate-400 mt-1">Unthemed Issues</div>
+                </div>
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <div class="text-3xl font-bold text-white">{{ summary.total_issues }}</div>
+                    <div class="text-sm text-slate-400 mt-1">Total Issues</div>
+                </div>
+            </div>
+
+            <!-- Themes by Product Area -->
+            <div v-if="themes.length === 0" class="bg-slate-800 rounded-xl border border-slate-700 p-12 text-center">
+                <div class="text-slate-500 text-lg mb-2">No themes generated yet</div>
+                <p class="text-slate-600 text-sm">Sync tickets first, then click "Generate Themes" to cluster issues into actionable themes.</p>
+            </div>
+
+            <div v-for="area in themes" :key="area.product_area" class="mb-6">
+                <div class="flex items-center gap-3 mb-3">
+                    <h3 class="text-lg font-semibold text-white">{{ area.product_area }}</h3>
+                    <span class="text-sm text-slate-400 bg-slate-700 px-2.5 py-1 rounded-full">
+                        {{ area.total_issues }} issues
+                    </span>
+                </div>
+
+                <!-- Theme Cards -->
+                <div class="grid gap-4">
+                    <div v-for="theme in area.themes" :key="theme.id"
+                         @click="selectTheme(theme)"
+                         class="bg-slate-800 rounded-xl border border-slate-700 p-5 cursor-pointer hover:border-slate-600 transition-colors">
+                        <div class="flex items-start justify-between gap-4 mb-3">
+                            <h4 class="text-white font-semibold">{{ theme.name }}</h4>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span class="text-sm font-medium text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded-full">
+                                    {{ theme.issue_count }} issues
+                                </span>
+                                <span class="text-sm text-slate-400 bg-slate-700 px-2.5 py-1 rounded-full">
+                                    {{ theme.unique_customers }} customers
+                                </span>
+                            </div>
+                        </div>
+
+                        <p class="text-slate-300 text-sm mb-4">{{ theme.summary }}</p>
+
+                        <div v-if="theme.specific_feedback && theme.specific_feedback.length" class="mb-4">
+                            <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Key Feedback</div>
+                            <ul class="space-y-1">
+                                <li v-for="(fb, idx) in theme.specific_feedback.slice(0, 3)" :key="idx"
+                                    class="text-sm text-slate-400 flex items-start gap-2">
+                                    <span class="text-purple-400 mt-1">•</span>
+                                    {{ fb }}
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div v-if="theme.representative_quotes && theme.representative_quotes.length"
+                             class="bg-slate-700/30 rounded-lg p-3 border-l-2 border-purple-500">
+                            <div class="text-sm text-slate-300 italic">
+                                "{{ theme.representative_quotes[0] }}"
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-4 mt-4 text-xs text-slate-500">
+                            <span v-if="theme.feature_workflow">{{ theme.feature_workflow }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ISSUES TAB -->
+        <div v-if="activeTab === 'issues'">
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <div class="text-3xl font-bold text-white">{{ summary.total_tickets }}</div>
+                    <div class="text-sm text-slate-400 mt-1">Total Tickets</div>
+                </div>
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <div class="text-3xl font-bold text-white">{{ summary.total_issues }}</div>
+                    <div class="text-sm text-slate-400 mt-1">Issues Found</div>
+                </div>
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <div class="text-3xl font-bold text-red-400">{{ highCount }}</div>
+                    <div class="text-sm text-slate-400 mt-1">High Severity</div>
+                </div>
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <div class="text-3xl font-bold text-amber-400">{{ mediumCount }}</div>
+                    <div class="text-sm text-slate-400 mt-1">Medium Severity</div>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <h3 class="font-semibold text-white mb-4">By Category</h3>
+                    <div v-for="cat in summary.by_category" :key="cat.category" class="flex justify-between py-2 border-b border-slate-700 last:border-0">
+                        <span class="text-sm text-slate-300">{{ cat.category }}</span>
+                        <span class="text-sm font-medium text-slate-100 bg-slate-700 px-2 py-0.5 rounded">{{ cat.count }}</span>
+                    </div>
+                    <div v-if="!summary.by_category.length" class="text-slate-500 text-sm">No data yet</div>
+                </div>
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <h3 class="font-semibold text-white mb-4">By Severity</h3>
+                    <div v-for="sev in summary.by_severity" :key="sev.severity" class="flex justify-between py-2 border-b border-slate-700 last:border-0">
+                        <span class="text-sm" :class="severityColor(sev.severity)">{{ sev.severity }}</span>
+                        <span class="text-sm font-medium text-slate-100 bg-slate-700 px-2 py-0.5 rounded">{{ sev.count }}</span>
+                    </div>
+                    <div v-if="!summary.by_severity.length" class="text-slate-500 text-sm">No data yet</div>
+                </div>
+                <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                    <h3 class="font-semibold text-white mb-4">By Type</h3>
+                    <div v-for="typ in summary.by_type" :key="typ.issue_type" class="flex justify-between py-2 border-b border-slate-700 last:border-0">
+                        <span class="text-sm text-slate-300">{{ typ.issue_type }}</span>
+                        <span class="text-sm font-medium text-slate-100 bg-slate-700 px-2 py-0.5 rounded">{{ typ.count }}</span>
+                    </div>
+                    <div v-if="!summary.by_type.length" class="text-slate-500 text-sm">No data yet</div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="bg-slate-800 rounded-xl border border-slate-700 p-4 mb-6">
+                <div class="flex gap-4 flex-wrap items-center">
+                    <select v-model="filterCategory" @change="loadIssues" class="bg-slate-700 border border-slate-600 text-slate-100 rounded-lg px-4 py-2">
+                        <option value="">All Categories</option>
+                        <option v-for="cat in summary.by_category" :value="cat.category">{{ cat.category }}</option>
                     </select>
+                    <select v-model="filterSeverity" @change="loadIssues" class="bg-slate-700 border border-slate-600 text-slate-100 rounded-lg px-4 py-2">
+                        <option value="">All Severities</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                    <button @click="resetFilters" class="text-blue-400 hover:text-blue-300 transition-colors">Reset Filters</button>
+                </div>
+            </div>
+
+            <!-- Issues Table -->
+            <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                <table class="w-full">
+                    <thead class="bg-slate-700/50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Ticket</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Category</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Severity</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Type</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Summary</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-700">
+                        <tr v-for="issue in issues" :key="issue.id" class="hover:bg-slate-700/50 cursor-pointer transition-colors" @click="selectIssue(issue)">
+                            <td class="px-4 py-3 text-sm text-slate-300 font-mono">#{{ issue.zendesk_id }}</td>
+                            <td class="px-4 py-3 text-sm text-slate-300">{{ issue.category }}</td>
+                            <td class="px-4 py-3">
+                                <span :class="severityBadge(issue.severity)" class="px-2.5 py-1 text-xs font-medium rounded-full">
+                                    {{ issue.severity }}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-slate-300">{{ issue.issue_type }}</td>
+                            <td class="px-4 py-3 text-sm text-slate-300">{{ issue.summary }}</td>
+                        </tr>
+                        <tr v-if="issues.length === 0">
+                            <td colspan="5" class="px-4 py-12 text-center text-slate-500">
+                                No issues found. Try syncing some tickets.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- SYNC TAB -->
+        <div v-if="activeTab === 'sync'">
+            <!-- Sync Controls -->
+            <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-6">
+                <div class="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                        <h2 class="text-lg font-semibold text-white">Sync Tickets</h2>
+                        <p class="text-sm text-slate-400">Fetch tickets from Zendesk and analyze with Claude</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <select v-model="syncDays" class="bg-slate-700 border border-slate-600 text-slate-100 rounded-lg px-4 py-2">
+                            <option value="1">Last 1 day</option>
+                            <option value="7">Last 7 days</option>
+                            <option value="14">Last 14 days</option>
+                            <option value="30">Last 30 days</option>
+                            <option value="60">Last 60 days</option>
+                            <option value="90">Last 90 days</option>
+                        </select>
+                        <button
+                            @click="triggerSync"
+                            :disabled="syncStatus.running"
+                            class="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors">
+                            {{ syncStatus.running ? 'Syncing...' : 'Sync Now' }}
+                        </button>
+                    </div>
+                </div>
+                <div v-if="syncStatus.last_result" class="mt-4 p-3 bg-slate-700/50 rounded-lg text-sm">
+                    <span v-if="syncStatus.last_result.success" class="text-emerald-400">
+                        Last sync: {{ syncStatus.last_result.tickets_synced }} tickets,
+                        {{ syncStatus.last_result.issues_extracted }} issues extracted
+                    </span>
+                    <span v-else class="text-red-400">
+                        Sync failed: {{ syncStatus.last_result.error }}
+                    </span>
+                </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="bg-slate-800 rounded-xl border border-red-900/50 p-6">
+                <h2 class="text-lg font-semibold text-red-400 mb-4">Danger Zone</h2>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="text-white font-medium">Clear All Data</div>
+                        <p class="text-sm text-slate-400">Delete all tickets, issues, and themes</p>
+                    </div>
                     <button
-                        @click="triggerSync"
-                        :disabled="syncStatus.running"
-                        class="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors">
-                        {{ syncStatus.running ? 'Syncing...' : 'Sync Now' }}
-                    </button>
-                    <button
-                        @click="clearAndSync"
+                        @click="clearAllData"
                         :disabled="syncStatus.running"
                         class="bg-red-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-red-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors">
-                        Clear & Re-sync
+                        Clear All Data
                     </button>
                 </div>
             </div>
-            <div v-if="syncStatus.last_result" class="mt-4 p-3 bg-slate-700/50 rounded-lg text-sm">
-                <span v-if="syncStatus.last_result.success" class="text-emerald-400">
-                    Last sync: {{ syncStatus.last_result.tickets_synced }} tickets,
-                    {{ syncStatus.last_result.issues_extracted }} issues extracted
-                </span>
-                <span v-else class="text-red-400">
-                    Sync failed: {{ syncStatus.last_result.error }}
-                </span>
-            </div>
         </div>
 
-        <!-- Summary Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
-                <div class="text-3xl font-bold text-white">{{ summary.total_tickets }}</div>
-                <div class="text-sm text-slate-400 mt-1">Total Tickets</div>
-            </div>
-            <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
-                <div class="text-3xl font-bold text-white">{{ summary.total_issues }}</div>
-                <div class="text-sm text-slate-400 mt-1">Issues Found</div>
-            </div>
-            <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
-                <div class="text-3xl font-bold text-red-400">{{ highCount }}</div>
-                <div class="text-sm text-slate-400 mt-1">High Severity</div>
-            </div>
-            <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
-                <div class="text-3xl font-bold text-amber-400">{{ mediumCount }}</div>
-                <div class="text-sm text-slate-400 mt-1">Medium Severity</div>
-            </div>
-        </div>
+        <!-- Theme Detail Modal -->
+        <div v-if="selectedTheme" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50" @click.self="selectedTheme = null">
+            <div class="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-y-auto">
+                <div class="p-6">
+                    <div class="flex justify-between items-start mb-6">
+                        <div>
+                            <span class="text-sm text-purple-400 font-medium">{{ selectedTheme.product_area }}</span>
+                            <h2 class="text-xl font-bold text-white mt-1">{{ selectedTheme.name }}</h2>
+                        </div>
+                        <button @click="selectedTheme = null" class="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+                    </div>
 
-        <!-- Charts Row -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <!-- By Category -->
-            <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
-                <h3 class="font-semibold text-white mb-4">By Category</h3>
-                <div v-for="cat in summary.by_category" :key="cat.category" class="flex justify-between py-2 border-b border-slate-700 last:border-0">
-                    <span class="text-sm text-slate-300">{{ cat.category }}</span>
-                    <span class="text-sm font-medium text-slate-100 bg-slate-700 px-2 py-0.5 rounded">{{ cat.count }}</span>
+                    <div class="flex gap-4 mb-6">
+                        <div class="bg-purple-500/10 border border-purple-500/20 rounded-lg px-4 py-2">
+                            <div class="text-2xl font-bold text-purple-400">{{ selectedTheme.issue_count }}</div>
+                            <div class="text-xs text-purple-300">Issues</div>
+                        </div>
+                        <div class="bg-slate-700/50 rounded-lg px-4 py-2">
+                            <div class="text-2xl font-bold text-white">{{ selectedTheme.unique_customers }}</div>
+                            <div class="text-xs text-slate-400">Customers</div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-5">
+                        <div>
+                            <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Summary</div>
+                            <p class="text-slate-200">{{ selectedTheme.summary }}</p>
+                        </div>
+
+                        <div v-if="selectedTheme.specific_feedback && selectedTheme.specific_feedback.length">
+                            <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Specific Feedback</div>
+                            <ul class="space-y-2">
+                                <li v-for="(fb, idx) in selectedTheme.specific_feedback" :key="idx"
+                                    class="text-slate-300 flex items-start gap-2 bg-slate-700/30 p-3 rounded-lg">
+                                    <span class="text-purple-400 font-bold">{{ idx + 1 }}.</span>
+                                    {{ fb }}
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div v-if="selectedTheme.representative_quotes && selectedTheme.representative_quotes.length">
+                            <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Customer Quotes</div>
+                            <div class="space-y-2">
+                                <div v-for="(quote, idx) in selectedTheme.representative_quotes" :key="idx"
+                                     class="bg-slate-700/30 rounded-lg p-3 border-l-2 border-purple-500">
+                                    <p class="text-slate-300 italic">"{{ quote }}"</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedTheme.feature_workflow">
+                            <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Feature/Workflow</div>
+                            <div class="text-slate-200 bg-slate-700/50 px-3 py-2 rounded-lg inline-block">{{ selectedTheme.feature_workflow }}</div>
+                        </div>
+
+                        <!-- Issues in this theme -->
+                        <div v-if="themeIssues.length" class="pt-4 border-t border-slate-700">
+                            <div class="text-xs uppercase tracking-wider text-slate-500 mb-3">Issues in this Theme ({{ themeIssues.length }})</div>
+                            <div class="space-y-2 max-h-64 overflow-y-auto">
+                                <div v-for="issue in themeIssues" :key="issue.id"
+                                     class="bg-slate-700/30 rounded-lg p-3 hover:bg-slate-700/50 transition-colors">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <a :href="'https://workwelltech.zendesk.com/agent/tickets/' + issue.zendesk_id"
+                                           target="_blank"
+                                           class="text-sm font-mono text-blue-400 hover:text-blue-300">
+                                            #{{ issue.zendesk_id }}
+                                        </a>
+                                        <span :class="severityBadge(issue.severity)" class="px-2 py-0.5 text-xs rounded-full">
+                                            {{ issue.severity }}
+                                        </span>
+                                    </div>
+                                    <p class="text-sm text-slate-300">{{ issue.summary }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div v-if="!summary.by_category.length" class="text-slate-500 text-sm">No data yet</div>
             </div>
-            <!-- By Severity -->
-            <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
-                <h3 class="font-semibold text-white mb-4">By Severity</h3>
-                <div v-for="sev in summary.by_severity" :key="sev.severity" class="flex justify-between py-2 border-b border-slate-700 last:border-0">
-                    <span class="text-sm" :class="severityColor(sev.severity)">{{ sev.severity }}</span>
-                    <span class="text-sm font-medium text-slate-100 bg-slate-700 px-2 py-0.5 rounded">{{ sev.count }}</span>
-                </div>
-                <div v-if="!summary.by_severity.length" class="text-slate-500 text-sm">No data yet</div>
-            </div>
-            <!-- By Type -->
-            <div class="bg-slate-800 rounded-xl border border-slate-700 p-5">
-                <h3 class="font-semibold text-white mb-4">By Type</h3>
-                <div v-for="typ in summary.by_type" :key="typ.issue_type" class="flex justify-between py-2 border-b border-slate-700 last:border-0">
-                    <span class="text-sm text-slate-300">{{ typ.issue_type }}</span>
-                    <span class="text-sm font-medium text-slate-100 bg-slate-700 px-2 py-0.5 rounded">{{ typ.count }}</span>
-                </div>
-                <div v-if="!summary.by_type.length" class="text-slate-500 text-sm">No data yet</div>
-            </div>
-        </div>
-
-        <!-- Filters -->
-        <div class="bg-slate-800 rounded-xl border border-slate-700 p-4 mb-6">
-            <div class="flex gap-4 flex-wrap items-center">
-                <select v-model="filterCategory" @change="loadIssues" class="bg-slate-700 border border-slate-600 text-slate-100 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                    <option value="">All Categories</option>
-                    <option v-for="cat in summary.by_category" :value="cat.category">{{ cat.category }}</option>
-                </select>
-                <select v-model="filterSeverity" @change="loadIssues" class="bg-slate-700 border border-slate-600 text-slate-100 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                    <option value="">All Severities</option>
-                    <option value="critical">Critical</option>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                </select>
-                <button @click="resetFilters" class="text-blue-400 hover:text-blue-300 transition-colors">Reset Filters</button>
-            </div>
-        </div>
-
-        <!-- Issues Table -->
-        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <table class="w-full">
-                <thead class="bg-slate-700/50">
-                    <tr>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Ticket</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Category</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Severity</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Type</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Summary</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-700">
-                    <tr v-for="issue in issues" :key="issue.id" class="hover:bg-slate-700/50 cursor-pointer transition-colors" @click="selectIssue(issue)">
-                        <td class="px-4 py-3 text-sm text-slate-300 font-mono">#{{ issue.zendesk_id }}</td>
-                        <td class="px-4 py-3 text-sm text-slate-300">{{ issue.category }}</td>
-                        <td class="px-4 py-3">
-                            <span :class="severityBadge(issue.severity)" class="px-2.5 py-1 text-xs font-medium rounded-full">
-                                {{ issue.severity }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 text-sm text-slate-300">{{ issue.issue_type }}</td>
-                        <td class="px-4 py-3 text-sm text-slate-300">{{ issue.summary }}</td>
-                    </tr>
-                    <tr v-if="issues.length === 0">
-                        <td colspan="5" class="px-4 py-12 text-center text-slate-500">
-                            No issues found. Try syncing some tickets.
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
         </div>
 
         <!-- Issue Detail Modal -->
@@ -212,8 +440,11 @@
                             <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Detail</div>
                             <div class="text-slate-300 bg-slate-700/50 rounded-lg p-3">{{ selectedIssue.detail }}</div>
                         </div>
+                        <div v-if="selectedIssue.problem_statement">
+                            <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Problem Statement</div>
+                            <div class="text-slate-300 bg-purple-500/10 border border-purple-500/20 rounded-lg p-3 italic">{{ selectedIssue.problem_statement }}</div>
+                        </div>
 
-                        <!-- Product Context Section -->
                         <div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-700">
                             <div v-if="selectedIssue.platform">
                                 <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Platform</div>
@@ -280,14 +511,22 @@
         createApp({
             data() {
                 return {
+                    activeTab: 'themes',
                     summary: { total_tickets: 0, total_issues: 0, by_category: [], by_severity: [], by_type: [] },
+                    themeSummary: { total_themes: 0, themed_issues: 0, unthemed_issues: 0 },
+                    themes: [],
                     issues: [],
                     syncStatus: { running: false, last_result: null },
+                    themeStatus: { running: false, last_result: null },
                     syncDays: '7',
+                    themeMode: 'full',
                     filterCategory: '',
                     filterSeverity: '',
                     selectedIssue: null,
-                    pollInterval: null
+                    selectedTheme: null,
+                    themeIssues: [],
+                    pollInterval: null,
+                    themePollInterval: null
                 }
             },
             computed: {
@@ -306,6 +545,14 @@
                     const res = await fetch('/api/summary');
                     this.summary = await res.json();
                 },
+                async loadThemeSummary() {
+                    const res = await fetch('/api/themes/summary');
+                    this.themeSummary = await res.json();
+                },
+                async loadThemes() {
+                    const res = await fetch('/api/themes');
+                    this.themes = await res.json();
+                },
                 async loadIssues() {
                     let url = '/api/issues?limit=100';
                     if (this.filterCategory) url += `&category=${this.filterCategory}`;
@@ -317,6 +564,10 @@
                     const res = await fetch('/api/sync/status');
                     this.syncStatus = await res.json();
                 },
+                async loadThemeStatus() {
+                    const res = await fetch('/api/themes/status');
+                    this.themeStatus = await res.json();
+                },
                 async triggerSync() {
                     await fetch('/api/sync', {
                         method: 'POST',
@@ -324,16 +575,24 @@
                         body: JSON.stringify({ days: parseInt(this.syncDays) })
                     });
                     this.syncStatus.running = true;
-                    this.startPolling();
+                    this.startSyncPolling();
                 },
-                async clearAndSync() {
-                    if (!confirm('This will delete all existing data and re-sync. Continue?')) return;
+                async generateThemes() {
+                    await fetch('/api/themes/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mode: this.themeMode })
+                    });
+                    this.themeStatus.running = true;
+                    this.startThemePolling();
+                },
+                async clearAllData() {
+                    if (!confirm('This will delete ALL tickets, issues, and themes. Are you sure?')) return;
                     await fetch('/api/data', { method: 'DELETE' });
-                    await this.loadSummary();
-                    await this.loadIssues();
-                    await this.triggerSync();
+                    await fetch('/api/themes', { method: 'DELETE' });
+                    await this.loadAll();
                 },
-                startPolling() {
+                startSyncPolling() {
                     this.pollInterval = setInterval(async () => {
                         await this.loadSyncStatus();
                         await this.loadSummary();
@@ -343,6 +602,16 @@
                         }
                     }, 3000);
                 },
+                startThemePolling() {
+                    this.themePollInterval = setInterval(async () => {
+                        await this.loadThemeStatus();
+                        await this.loadThemes();
+                        await this.loadThemeSummary();
+                        if (!this.themeStatus.running) {
+                            clearInterval(this.themePollInterval);
+                        }
+                    }, 2000);
+                },
                 resetFilters() {
                     this.filterCategory = '';
                     this.filterSeverity = '';
@@ -350,6 +619,13 @@
                 },
                 selectIssue(issue) {
                     this.selectedIssue = issue;
+                },
+                async selectTheme(theme) {
+                    this.selectedTheme = theme;
+                    // Load issues for this theme
+                    const res = await fetch(`/api/themes/${theme.id}`);
+                    const data = await res.json();
+                    this.themeIssues = data.issues || [];
                 },
                 severityColor(sev) {
                     return {
@@ -371,14 +647,25 @@
                         'bg-amber-500/20 text-amber-400 border border-amber-500/30': freq === 'intermittent',
                         'bg-slate-500/20 text-slate-400 border border-slate-500/30': freq === 'one_time' || freq === 'unknown'
                     };
+                },
+                async loadAll() {
+                    await Promise.all([
+                        this.loadSummary(),
+                        this.loadThemeSummary(),
+                        this.loadThemes(),
+                        this.loadIssues(),
+                        this.loadSyncStatus(),
+                        this.loadThemeStatus()
+                    ]);
                 }
             },
             async mounted() {
-                await this.loadSummary();
-                await this.loadIssues();
-                await this.loadSyncStatus();
+                await this.loadAll();
                 if (this.syncStatus.running) {
-                    this.startPolling();
+                    this.startSyncPolling();
+                }
+                if (this.themeStatus.running) {
+                    this.startThemePolling();
                 }
             }
         }).mount('#app');

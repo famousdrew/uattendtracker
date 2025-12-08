@@ -12,10 +12,12 @@ from config import Config
 from zendesk_client import ZendeskClient
 from storage import get_storage
 from analyzer import Analyzer
+from theme_generator import ThemeGenerator
 
 
 # Track background sync status
 sync_status = {"running": False, "last_result": None}
+theme_status = {"running": False, "last_result": None}
 
 
 @asynccontextmanager
@@ -48,6 +50,10 @@ app.add_middleware(
 
 class SyncRequest(BaseModel):
     days: int = 7
+
+
+class ThemeGenerateRequest(BaseModel):
+    mode: str = "full"  # "full" or "incremental"
 
 
 class SyncResponse(BaseModel):
@@ -208,6 +214,95 @@ def clear_all_data():
     storage = get_storage()
     storage.clear_all()
     return {"status": "ok", "message": "All data cleared"}
+
+
+# --- Theme Endpoints ---
+
+def run_theme_generation(mode: str):
+    """Background task to generate themes."""
+    global theme_status
+    theme_status["running"] = True
+    theme_status["last_result"] = None
+
+    try:
+        storage = get_storage()
+        generator = ThemeGenerator(storage)
+        result = generator.generate_themes(mode=mode)
+        theme_status["last_result"] = {"success": True, **result}
+    except Exception as e:
+        theme_status["last_result"] = {"success": False, "error": str(e)}
+    finally:
+        theme_status["running"] = False
+
+
+@app.post("/api/themes/generate")
+def trigger_theme_generation(request: ThemeGenerateRequest, background_tasks: BackgroundTasks):
+    """Trigger theme generation in the background."""
+    if theme_status["running"]:
+        raise HTTPException(status_code=409, detail="Theme generation already in progress")
+
+    background_tasks.add_task(run_theme_generation, request.mode)
+    return {"status": "started", "message": f"Theme generation started in {request.mode} mode"}
+
+
+@app.get("/api/themes/status")
+def get_theme_status():
+    """Get the status of theme generation."""
+    return theme_status
+
+
+@app.get("/api/themes")
+def list_themes():
+    """List all themes grouped by product area."""
+    storage = get_storage()
+    themes = storage.get_all_themes()
+
+    # Group themes by product area
+    grouped = {}
+    for theme in themes:
+        area = theme.get("product_area") or "Other"
+        if area not in grouped:
+            grouped[area] = {"product_area": area, "themes": [], "total_issues": 0}
+        grouped[area]["themes"].append(theme)
+        grouped[area]["total_issues"] += theme.get("issue_count", 0)
+
+    # Sort by total issues
+    result = sorted(grouped.values(), key=lambda x: x["total_issues"], reverse=True)
+    return result
+
+
+@app.get("/api/themes/flat")
+def list_themes_flat():
+    """List all themes as a flat list."""
+    storage = get_storage()
+    return storage.get_all_themes()
+
+
+@app.get("/api/themes/summary")
+def get_themes_summary():
+    """Get summary statistics for themes."""
+    storage = get_storage()
+    return storage.get_theme_summary()
+
+
+@app.get("/api/themes/{theme_id}")
+def get_theme_detail(theme_id: int):
+    """Get a single theme with its issues."""
+    storage = get_storage()
+    theme = storage.get_theme(theme_id)
+    if not theme:
+        raise HTTPException(status_code=404, detail="Theme not found")
+
+    issues = storage.get_issues_by_theme(theme_id)
+    return {**theme, "issues": issues}
+
+
+@app.delete("/api/themes")
+def clear_themes():
+    """Clear all themes (unassigns issues but keeps them)."""
+    storage = get_storage()
+    storage.clear_themes()
+    return {"status": "ok", "message": "All themes cleared"}
 
 
 # Serve static frontend

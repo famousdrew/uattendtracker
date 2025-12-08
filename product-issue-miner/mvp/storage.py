@@ -50,6 +50,7 @@ class SQLiteStorage:
                     severity TEXT,
                     summary TEXT,
                     detail TEXT,
+                    problem_statement TEXT,
                     confidence REAL,
                     user_segment TEXT,
                     platform TEXT,
@@ -58,14 +59,37 @@ class SQLiteStorage:
                     root_cause_hint TEXT,
                     business_impact TEXT,
                     related_feature TEXT,
+                    theme_id INTEGER,
                     extracted_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (ticket_id) REFERENCES tickets(zendesk_id)
+                    FOREIGN KEY (ticket_id) REFERENCES tickets(zendesk_id),
+                    FOREIGN KEY (theme_id) REFERENCES themes(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS themes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    product_area TEXT,
+                    summary TEXT,
+                    specific_feedback TEXT,
+                    representative_quotes TEXT,
+                    feature_workflow TEXT,
+                    issue_count INTEGER DEFAULT 0,
+                    unique_customers INTEGER DEFAULT 0,
+                    first_seen TEXT,
+                    last_seen TEXT,
+                    trend_7d_pct REAL,
+                    pm_status TEXT DEFAULT 'new',
+                    pm_notes TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_tickets_zendesk_id ON tickets(zendesk_id);
                 CREATE INDEX IF NOT EXISTS idx_issues_ticket_id ON issues(ticket_id);
                 CREATE INDEX IF NOT EXISTS idx_issues_category ON issues(category);
                 CREATE INDEX IF NOT EXISTS idx_issues_severity ON issues(severity);
+                CREATE INDEX IF NOT EXISTS idx_issues_theme_id ON issues(theme_id);
+                CREATE INDEX IF NOT EXISTS idx_themes_product_area ON themes(product_area);
             """)
 
     def upsert_ticket(self, ticket: dict, comments: list[dict] = None):
@@ -99,10 +123,10 @@ class SQLiteStorage:
     def save_issue(self, ticket_id: int, issue: dict):
         with self._get_conn() as conn:
             conn.execute("""
-                INSERT INTO issues (ticket_id, category, issue_type, severity, summary, detail, confidence,
-                                    user_segment, platform, frequency, has_workaround, root_cause_hint,
-                                    business_impact, related_feature)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO issues (ticket_id, category, issue_type, severity, summary, detail, problem_statement,
+                                    confidence, user_segment, platform, frequency, has_workaround, root_cause_hint,
+                                    business_impact, related_feature, theme_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 ticket_id,
                 issue.get("category"),
@@ -110,6 +134,7 @@ class SQLiteStorage:
                 issue.get("severity"),
                 issue.get("summary"),
                 issue.get("detail"),
+                issue.get("problem_statement"),
                 issue.get("confidence"),
                 issue.get("user_segment"),
                 issue.get("platform"),
@@ -118,6 +143,7 @@ class SQLiteStorage:
                 issue.get("root_cause_hint"),
                 issue.get("business_impact"),
                 issue.get("related_feature"),
+                issue.get("theme_id"),
             ))
 
     def get_unanalyzed_tickets(self) -> list[dict]:
@@ -172,6 +198,160 @@ class SQLiteStorage:
             conn.execute("DELETE FROM issues")
             conn.execute("DELETE FROM tickets")
 
+    # --- Theme methods ---
+
+    def save_theme(self, theme: dict) -> int:
+        """Save a new theme and return its ID."""
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                INSERT INTO themes (name, product_area, summary, specific_feedback, representative_quotes,
+                                    feature_workflow, issue_count, unique_customers, first_seen, last_seen,
+                                    trend_7d_pct, pm_status, pm_notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                theme.get("name"),
+                theme.get("product_area"),
+                theme.get("summary"),
+                json.dumps(theme.get("specific_feedback", [])),
+                json.dumps(theme.get("representative_quotes", [])),
+                theme.get("feature_workflow"),
+                theme.get("issue_count", 0),
+                theme.get("unique_customers", 0),
+                theme.get("first_seen"),
+                theme.get("last_seen"),
+                theme.get("trend_7d_pct"),
+                theme.get("pm_status", "new"),
+                theme.get("pm_notes"),
+            ))
+            return cursor.lastrowid
+
+    def update_theme(self, theme_id: int, theme: dict):
+        """Update an existing theme."""
+        with self._get_conn() as conn:
+            conn.execute("""
+                UPDATE themes SET
+                    name = ?, product_area = ?, summary = ?, specific_feedback = ?,
+                    representative_quotes = ?, feature_workflow = ?, issue_count = ?,
+                    unique_customers = ?, first_seen = ?, last_seen = ?, trend_7d_pct = ?,
+                    pm_status = ?, pm_notes = ?, updated_at = ?
+                WHERE id = ?
+            """, (
+                theme.get("name"),
+                theme.get("product_area"),
+                theme.get("summary"),
+                json.dumps(theme.get("specific_feedback", [])),
+                json.dumps(theme.get("representative_quotes", [])),
+                theme.get("feature_workflow"),
+                theme.get("issue_count", 0),
+                theme.get("unique_customers", 0),
+                theme.get("first_seen"),
+                theme.get("last_seen"),
+                theme.get("trend_7d_pct"),
+                theme.get("pm_status", "new"),
+                theme.get("pm_notes"),
+                datetime.utcnow().isoformat(),
+                theme_id,
+            ))
+
+    def assign_issue_to_theme(self, issue_id: int, theme_id: int):
+        """Assign an issue to a theme."""
+        with self._get_conn() as conn:
+            conn.execute("UPDATE issues SET theme_id = ? WHERE id = ?", (theme_id, issue_id))
+
+    def get_all_themes(self) -> list[dict]:
+        """Get all themes ordered by issue count."""
+        with self._get_conn() as conn:
+            conn.row_factory = self._sqlite3.Row
+            cursor = conn.execute("""
+                SELECT * FROM themes ORDER BY issue_count DESC
+            """)
+            themes = []
+            for row in cursor.fetchall():
+                theme = dict(row)
+                theme["specific_feedback"] = json.loads(theme["specific_feedback"]) if theme["specific_feedback"] else []
+                theme["representative_quotes"] = json.loads(theme["representative_quotes"]) if theme["representative_quotes"] else []
+                themes.append(theme)
+            return themes
+
+    def get_theme(self, theme_id: int) -> dict | None:
+        """Get a single theme by ID."""
+        with self._get_conn() as conn:
+            conn.row_factory = self._sqlite3.Row
+            cursor = conn.execute("SELECT * FROM themes WHERE id = ?", (theme_id,))
+            row = cursor.fetchone()
+            if row:
+                theme = dict(row)
+                theme["specific_feedback"] = json.loads(theme["specific_feedback"]) if theme["specific_feedback"] else []
+                theme["representative_quotes"] = json.loads(theme["representative_quotes"]) if theme["representative_quotes"] else []
+                return theme
+            return None
+
+    def get_issues_by_theme(self, theme_id: int) -> list[dict]:
+        """Get all issues belonging to a theme."""
+        with self._get_conn() as conn:
+            conn.row_factory = self._sqlite3.Row
+            cursor = conn.execute("""
+                SELECT i.*, t.subject as ticket_subject, t.zendesk_id, t.requester_email
+                FROM issues i
+                JOIN tickets t ON i.ticket_id = t.zendesk_id
+                WHERE i.theme_id = ?
+                ORDER BY i.extracted_at DESC
+            """, (theme_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_unthemed_issues(self) -> list[dict]:
+        """Get all issues not assigned to a theme."""
+        with self._get_conn() as conn:
+            conn.row_factory = self._sqlite3.Row
+            cursor = conn.execute("""
+                SELECT i.*, t.subject as ticket_subject, t.zendesk_id, t.requester_email
+                FROM issues i
+                JOIN tickets t ON i.ticket_id = t.zendesk_id
+                WHERE i.theme_id IS NULL
+                ORDER BY i.extracted_at DESC
+            """)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_issues_for_theming(self) -> list[dict]:
+        """Get all issues with fields needed for theme generation."""
+        with self._get_conn() as conn:
+            conn.row_factory = self._sqlite3.Row
+            cursor = conn.execute("""
+                SELECT i.id, i.ticket_id, i.category, i.issue_type, i.severity, i.summary,
+                       i.detail, i.problem_statement, i.related_feature, i.business_impact,
+                       i.theme_id, t.requester_email, t.zendesk_id
+                FROM issues i
+                JOIN tickets t ON i.ticket_id = t.zendesk_id
+                ORDER BY i.extracted_at DESC
+            """)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def clear_themes(self):
+        """Clear all themes and unassign issues."""
+        with self._get_conn() as conn:
+            conn.execute("UPDATE issues SET theme_id = NULL")
+            conn.execute("DELETE FROM themes")
+
+    def get_theme_summary(self) -> dict:
+        """Get summary statistics for themes."""
+        with self._get_conn() as conn:
+            conn.row_factory = self._sqlite3.Row
+            total_themes = conn.execute("SELECT COUNT(*) as c FROM themes").fetchone()["c"]
+            themed_issues = conn.execute("SELECT COUNT(*) as c FROM issues WHERE theme_id IS NOT NULL").fetchone()["c"]
+            unthemed_issues = conn.execute("SELECT COUNT(*) as c FROM issues WHERE theme_id IS NULL").fetchone()["c"]
+            by_product_area = conn.execute("""
+                SELECT product_area, COUNT(*) as theme_count, SUM(issue_count) as total_issues
+                FROM themes
+                GROUP BY product_area
+                ORDER BY total_issues DESC
+            """).fetchall()
+            return {
+                "total_themes": total_themes,
+                "themed_issues": themed_issues,
+                "unthemed_issues": unthemed_issues,
+                "by_product_area": [dict(r) for r in by_product_area],
+            }
+
 
 class PostgresStorage:
     """PostgreSQL storage for production."""
@@ -213,6 +393,7 @@ class PostgresStorage:
                         severity TEXT,
                         summary TEXT,
                         detail TEXT,
+                        problem_statement TEXT,
                         confidence REAL,
                         user_segment TEXT,
                         platform TEXT,
@@ -221,13 +402,35 @@ class PostgresStorage:
                         root_cause_hint TEXT,
                         business_impact TEXT,
                         related_feature TEXT,
+                        theme_id INTEGER,
                         extracted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    CREATE TABLE IF NOT EXISTS themes (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        product_area TEXT,
+                        summary TEXT,
+                        specific_feedback TEXT,
+                        representative_quotes TEXT,
+                        feature_workflow TEXT,
+                        issue_count INTEGER DEFAULT 0,
+                        unique_customers INTEGER DEFAULT 0,
+                        first_seen TIMESTAMP,
+                        last_seen TIMESTAMP,
+                        trend_7d_pct REAL,
+                        pm_status TEXT DEFAULT 'new',
+                        pm_notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
 
                     CREATE INDEX IF NOT EXISTS idx_tickets_zendesk_id ON tickets(zendesk_id);
                     CREATE INDEX IF NOT EXISTS idx_issues_ticket_id ON issues(ticket_id);
                     CREATE INDEX IF NOT EXISTS idx_issues_category ON issues(category);
                     CREATE INDEX IF NOT EXISTS idx_issues_severity ON issues(severity);
+                    CREATE INDEX IF NOT EXISTS idx_issues_theme_id ON issues(theme_id);
+                    CREATE INDEX IF NOT EXISTS idx_themes_product_area ON themes(product_area);
                 """)
             conn.commit()
 
@@ -265,10 +468,10 @@ class PostgresStorage:
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO issues (ticket_id, category, issue_type, severity, summary, detail, confidence,
-                                        user_segment, platform, frequency, has_workaround, root_cause_hint,
-                                        business_impact, related_feature)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO issues (ticket_id, category, issue_type, severity, summary, detail, problem_statement,
+                                        confidence, user_segment, platform, frequency, has_workaround, root_cause_hint,
+                                        business_impact, related_feature, theme_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     ticket_id,
                     issue.get("category"),
@@ -276,6 +479,7 @@ class PostgresStorage:
                     issue.get("severity"),
                     issue.get("summary"),
                     issue.get("detail"),
+                    issue.get("problem_statement"),
                     issue.get("confidence"),
                     issue.get("user_segment"),
                     issue.get("platform"),
@@ -284,6 +488,7 @@ class PostgresStorage:
                     issue.get("root_cause_hint"),
                     issue.get("business_impact"),
                     issue.get("related_feature"),
+                    issue.get("theme_id"),
                 ))
             conn.commit()
 
@@ -347,6 +552,172 @@ class PostgresStorage:
                 cur.execute("DELETE FROM issues")
                 cur.execute("DELETE FROM tickets")
             conn.commit()
+
+    # --- Theme methods ---
+
+    def save_theme(self, theme: dict) -> int:
+        """Save a new theme and return its ID."""
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO themes (name, product_area, summary, specific_feedback, representative_quotes,
+                                        feature_workflow, issue_count, unique_customers, first_seen, last_seen,
+                                        trend_7d_pct, pm_status, pm_notes)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (
+                    theme.get("name"),
+                    theme.get("product_area"),
+                    theme.get("summary"),
+                    json.dumps(theme.get("specific_feedback", [])),
+                    json.dumps(theme.get("representative_quotes", [])),
+                    theme.get("feature_workflow"),
+                    theme.get("issue_count", 0),
+                    theme.get("unique_customers", 0),
+                    theme.get("first_seen"),
+                    theme.get("last_seen"),
+                    theme.get("trend_7d_pct"),
+                    theme.get("pm_status", "new"),
+                    theme.get("pm_notes"),
+                ))
+                theme_id = cur.fetchone()[0]
+            conn.commit()
+            return theme_id
+
+    def update_theme(self, theme_id: int, theme: dict):
+        """Update an existing theme."""
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE themes SET
+                        name = %s, product_area = %s, summary = %s, specific_feedback = %s,
+                        representative_quotes = %s, feature_workflow = %s, issue_count = %s,
+                        unique_customers = %s, first_seen = %s, last_seen = %s, trend_7d_pct = %s,
+                        pm_status = %s, pm_notes = %s, updated_at = %s
+                    WHERE id = %s
+                """, (
+                    theme.get("name"),
+                    theme.get("product_area"),
+                    theme.get("summary"),
+                    json.dumps(theme.get("specific_feedback", [])),
+                    json.dumps(theme.get("representative_quotes", [])),
+                    theme.get("feature_workflow"),
+                    theme.get("issue_count", 0),
+                    theme.get("unique_customers", 0),
+                    theme.get("first_seen"),
+                    theme.get("last_seen"),
+                    theme.get("trend_7d_pct"),
+                    theme.get("pm_status", "new"),
+                    theme.get("pm_notes"),
+                    datetime.utcnow(),
+                    theme_id,
+                ))
+            conn.commit()
+
+    def assign_issue_to_theme(self, issue_id: int, theme_id: int):
+        """Assign an issue to a theme."""
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE issues SET theme_id = %s WHERE id = %s", (theme_id, issue_id))
+            conn.commit()
+
+    def get_all_themes(self) -> list[dict]:
+        """Get all themes ordered by issue count."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM themes ORDER BY issue_count DESC")
+                themes = []
+                for row in cur.fetchall():
+                    theme = dict(row)
+                    theme["specific_feedback"] = json.loads(theme["specific_feedback"]) if theme["specific_feedback"] else []
+                    theme["representative_quotes"] = json.loads(theme["representative_quotes"]) if theme["representative_quotes"] else []
+                    themes.append(theme)
+                return themes
+
+    def get_theme(self, theme_id: int) -> dict | None:
+        """Get a single theme by ID."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM themes WHERE id = %s", (theme_id,))
+                row = cur.fetchone()
+                if row:
+                    theme = dict(row)
+                    theme["specific_feedback"] = json.loads(theme["specific_feedback"]) if theme["specific_feedback"] else []
+                    theme["representative_quotes"] = json.loads(theme["representative_quotes"]) if theme["representative_quotes"] else []
+                    return theme
+                return None
+
+    def get_issues_by_theme(self, theme_id: int) -> list[dict]:
+        """Get all issues belonging to a theme."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT i.*, t.subject as ticket_subject, t.zendesk_id, t.requester_email
+                    FROM issues i
+                    JOIN tickets t ON i.ticket_id = t.zendesk_id
+                    WHERE i.theme_id = %s
+                    ORDER BY i.extracted_at DESC
+                """, (theme_id,))
+                return [dict(row) for row in cur.fetchall()]
+
+    def get_unthemed_issues(self) -> list[dict]:
+        """Get all issues not assigned to a theme."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT i.*, t.subject as ticket_subject, t.zendesk_id, t.requester_email
+                    FROM issues i
+                    JOIN tickets t ON i.ticket_id = t.zendesk_id
+                    WHERE i.theme_id IS NULL
+                    ORDER BY i.extracted_at DESC
+                """)
+                return [dict(row) for row in cur.fetchall()]
+
+    def get_issues_for_theming(self) -> list[dict]:
+        """Get all issues with fields needed for theme generation."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT i.id, i.ticket_id, i.category, i.issue_type, i.severity, i.summary,
+                           i.detail, i.problem_statement, i.related_feature, i.business_impact,
+                           i.theme_id, t.requester_email, t.zendesk_id
+                    FROM issues i
+                    JOIN tickets t ON i.ticket_id = t.zendesk_id
+                    ORDER BY i.extracted_at DESC
+                """)
+                return [dict(row) for row in cur.fetchall()]
+
+    def clear_themes(self):
+        """Clear all themes and unassign issues."""
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE issues SET theme_id = NULL")
+                cur.execute("DELETE FROM themes")
+            conn.commit()
+
+    def get_theme_summary(self) -> dict:
+        """Get summary statistics for themes."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute("SELECT COUNT(*) as c FROM themes")
+                total_themes = cur.fetchone()["c"]
+                cur.execute("SELECT COUNT(*) as c FROM issues WHERE theme_id IS NOT NULL")
+                themed_issues = cur.fetchone()["c"]
+                cur.execute("SELECT COUNT(*) as c FROM issues WHERE theme_id IS NULL")
+                unthemed_issues = cur.fetchone()["c"]
+                cur.execute("""
+                    SELECT product_area, COUNT(*) as theme_count, SUM(issue_count) as total_issues
+                    FROM themes
+                    GROUP BY product_area
+                    ORDER BY total_issues DESC
+                """)
+                by_product_area = [dict(r) for r in cur.fetchall()]
+                return {
+                    "total_themes": total_themes,
+                    "themed_issues": themed_issues,
+                    "unthemed_issues": unthemed_issues,
+                    "by_product_area": by_product_area,
+                }
 
 
 # Backwards compatibility alias

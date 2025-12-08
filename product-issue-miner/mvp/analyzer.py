@@ -68,6 +68,7 @@ For issues found:
             "severity": "severity_from_list",
             "summary": "Specific one-line summary with key details",
             "detail": "Fuller explanation including context, impact, and any error messages",
+            "problem_statement": "A natural language description of the user's pain point in their own words. This should capture WHAT the user is trying to do and WHY they can't do it easily. Example: 'I have to manually recreate the same schedule every week because there's no way to copy or set recurring shifts.'",
             "confidence": 0.0-1.0,
             "user_segment": "admin|manager|employee|unknown",
             "platform": "BN6500|MN1000|mobile_app|web|api|unknown",
@@ -81,6 +82,10 @@ For issues found:
 }}
 
 ADDITIONAL CONTEXT GUIDELINES:
+- problem_statement: CRITICAL - This is the user's pain point in natural language. Write it as if the user is explaining their frustration. Start with what they're trying to do, then why they can't. Use quotes from the ticket if available. Examples:
+  - "I need to copy last week's schedule but there's no copy function, so I spend 2 hours rebuilding it manually every Sunday."
+  - "When I try to run payroll, the hours don't match the timecards and I can't figure out why."
+  - "My employees keep getting locked out of the mobile app after updating their phones."
 - user_segment: Who is experiencing the issue - admin (account owner), manager (supervisor), or employee (regular user)
 - platform: Be specific about device model (BN6500, BN6000N, MN1000, CB4000, JR1000, DR1000) or platform (mobile_app, web, api)
 - frequency: one_time (happened once), intermittent (sometimes), consistent (always happens)
