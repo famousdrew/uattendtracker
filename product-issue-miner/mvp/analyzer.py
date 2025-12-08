@@ -92,7 +92,8 @@ ADDITIONAL CONTEXT GUIDELINES:
 - has_workaround: Did the support thread mention a workaround the customer could use?
 - root_cause_hint: Your hypothesis - could be "network connectivity", "firmware version", "permission settings", "data sync delay", etc.
 - business_impact: Describe operational impact - "employees can't clock in", "payroll delayed", "manager can't approve timecards"
-- related_feature: Specific feature affected - be granular like "fingerprint enrollment", "break deductions", "PTO accrual""""
+- related_feature: Specific feature affected - be granular like "fingerprint enrollment", "break deductions", "PTO accrual"
+"""
 
 
 class Analyzer:
