@@ -1,117 +1,146 @@
 # Product Issue Miner - MVP
 
-A minimal tool to extract product issues from Zendesk support tickets using Claude AI.
+A tool to extract and analyze product issues from Zendesk support tickets using Claude AI, specifically configured for uAttend time & attendance platform.
 
-## Quick Start (Local)
+## Live Dashboard
+
+**Production URL:** https://uattendtracker-production-b043.up.railway.app/
+
+## Features
+
+- Syncs tickets from Zendesk (filtered by brand)
+- Analyzes tickets with Claude AI to extract product issues
+- Dark mode dashboard with real-time sync updates
+- Rich issue context for Product teams
+- PostgreSQL storage in production
+
+## Issue Extraction
+
+Claude extracts the following for each issue:
+
+| Field | Description |
+|-------|-------------|
+| `category` | TIMECLOCK_HARDWARE, PUNCH_SYNC, TIMECARD, PAYROLL, MOBILE_APP, etc. |
+| `issue_type` | bug, friction, feature_request, data_issue, documentation_gap, configuration |
+| `severity` | critical, high, medium, low |
+| `summary` | One-line description |
+| `detail` | Full explanation with context |
+| `user_segment` | admin, manager, or employee affected |
+| `platform` | Device model (BN6500, MN1000) or app (mobile, web) |
+| `frequency` | one_time, intermittent, consistent |
+| `has_workaround` | Whether support provided a workaround |
+| `root_cause_hint` | AI hypothesis about root cause |
+| `business_impact` | Operational impact description |
+| `related_feature` | Specific feature affected |
+
+## Quick Start (Local Development)
 
 1. **Install dependencies:**
    ```bash
-   cd mvp
+   cd product-issue-miner/mvp
    pip install -r requirements.txt
    ```
 
 2. **Configure environment:**
    ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
+   export ZENDESK_SUBDOMAIN=workwelltech
+   export ZENDESK_EMAIL=your-email@company.com
+   export ZENDESK_API_TOKEN=your-token
+   export ZENDESK_BRAND_ID=1260802408910  # uAttend brand
+   export ANTHROPIC_API_KEY=your-key
    ```
 
-3. **Test connections:**
+3. **Run the API:**
    ```bash
-   python main.py test
+   python api.py
    ```
 
-4. **Sync and analyze:**
-   ```bash
-   python main.py sync --days 7 --limit 50
-   python main.py analyze
-   python main.py report --details
-   ```
+4. **Open dashboard:** http://localhost:8000
 
-## CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `test` | Test Zendesk and Claude connections |
-| `sync --days N --limit M` | Fetch tickets from last N days (max M) |
-| `analyze` | Analyze unprocessed tickets with Claude |
-| `report [--details]` | Show summary report |
-| `clear [--issues]` | Clear database or just issues |
-
-## Web API
-
-Run the API server:
-```bash
-python api.py
-```
-
-### Endpoints
+## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/` | GET | Dashboard UI |
 | `/health` | GET | Health check |
-| `/api/test` | GET | Test connections |
-| `/api/sync` | POST | Trigger sync (body: `{"days": 7, "limit": 100}`) |
+| `/api/sync` | POST | Trigger sync (`{"days": 7}`) |
 | `/api/sync/status` | GET | Check sync status |
-| `/api/summary` | GET | Get issue statistics |
+| `/api/summary` | GET | Issue statistics |
 | `/api/issues` | GET | List issues (params: `limit`, `category`, `severity`) |
-| `/api/tickets` | GET | List tickets |
+| `/api/tickets` | GET | List synced tickets |
+| `/api/data` | DELETE | Clear all data (for re-sync) |
 
-## Deploy to Railway via GitHub
+## Railway Deployment
 
-### One-time Setup
+### Project Setup
 
-1. **Create Railway project:**
-   - Go to [Railway](https://railway.app)
-   - Create new project
-   - Link your GitHub repo
+1. Create new Railway project from GitHub repo
+2. Set root directory to `product-issue-miner/mvp`
+3. Set builder to `Dockerfile`
+4. Add PostgreSQL service
+5. Link `DATABASE_URL` variable from Postgres to app
 
-2. **Add environment variables in Railway:**
-   - `ZENDESK_SUBDOMAIN`
-   - `ZENDESK_EMAIL`
-   - `ZENDESK_API_TOKEN`
-   - `ZENDESK_BRAND_ID` (optional)
-   - `ANTHROPIC_API_KEY`
-
-3. **Get Railway token:**
-   - Go to Account Settings > Tokens
-   - Create a new token
-
-4. **Add GitHub secrets:**
-   - Go to your repo Settings > Secrets > Actions
-   - Add `RAILWAY_TOKEN` with your token
-
-5. **Push to master** - deploys automatically!
-
-### Manual Deploy
-```bash
-# Or trigger via GitHub Actions UI (workflow_dispatch)
-```
-
-## Environment Variables
+### Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ZENDESK_SUBDOMAIN` | Yes | Your Zendesk subdomain |
+| `ZENDESK_SUBDOMAIN` | Yes | `workwelltech` |
 | `ZENDESK_EMAIL` | Yes | Agent email for API auth |
 | `ZENDESK_API_TOKEN` | Yes | Zendesk API token |
-| `ZENDESK_BRAND_ID` | No | Filter to specific brand |
+| `ZENDESK_BRAND_ID` | Yes | `1260802408910` (uAttend) |
 | `ANTHROPIC_API_KEY` | Yes | Claude API key |
-| `PORT` | No | API port (default: 8000) |
+| `DATABASE_URL` | Yes | PostgreSQL connection (from Railway) |
 
-## Data Storage
+### Auto-Deploy
 
-MVP uses SQLite (`mvp_data.db`) for simplicity. For production:
-- Use Railway's PostgreSQL addon
-- Or mount a persistent volume
+Push to `master` branch triggers automatic deployment via Railway's GitHub integration.
 
-## Limitations (MVP)
+## Architecture
 
-- SQLite (single instance only)
-- No auth on API
-- Simple keyword clustering (no embeddings)
-- No scheduled sync (manual trigger only)
+```
+mvp/
+├── api.py              # FastAPI server
+├── analyzer.py         # Claude issue extraction
+├── config.py           # Environment config
+├── knowledge_base.py   # Help Center scraper for context
+├── storage.py          # SQLite/PostgreSQL storage
+├── zendesk_client.py   # Zendesk API client
+├── static/
+│   └── index.html      # Vue.js dashboard
+├── Dockerfile          # Production container
+├── requirements.txt    # Python dependencies
+└── railway.toml        # Railway build config
+```
 
-Upgrade path: Add PostgreSQL, auth, and cron job for production.
-# Trigger deploy Sun, Dec  7, 2025  4:56:24 PM
+## Knowledge Base
 
+The analyzer fetches article data from the uAttend Help Center (https://uattend.zendesk.com/hc/en-us) to provide product context to Claude. This helps with:
+
+- Accurate categorization using product terminology
+- Understanding device models (BN, MN, CB, JR, DR series)
+- Recognizing feature areas (punch sync, fingerprint enrollment, etc.)
+
+Cache refreshes every 7 days automatically.
+
+## Ticket Volume & Limits
+
+- Zendesk search API limits to 1000 results per query
+- With ~240 tickets/day, we fetch in 3-day chunks
+- This ensures all tickets are captured for any date range
+
+## Data Flow
+
+1. **Sync**: Fetch tickets from Zendesk API (paginated, chunked)
+2. **Store**: Save tickets and comments to database
+3. **Analyze**: Send unanalyzed tickets to Claude with Help Center context
+4. **Extract**: Parse Claude response for structured issue data
+5. **Display**: Show issues in dashboard with filters and detail view
+
+## Future Improvements
+
+- [ ] Scheduled sync (cron/background worker)
+- [ ] CSV/Excel export
+- [ ] Trend analysis over time
+- [ ] Slack/email notifications for critical issues
+- [ ] Issue clustering/deduplication
+- [ ] User authentication
