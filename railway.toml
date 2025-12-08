@@ -1,0 +1,10 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "product-issue-miner/mvp/Dockerfile"
+watchPatterns = ["product-issue-miner/mvp/**"]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
