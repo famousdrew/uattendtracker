@@ -51,6 +51,13 @@ class SQLiteStorage:
                     summary TEXT,
                     detail TEXT,
                     confidence REAL,
+                    user_segment TEXT,
+                    platform TEXT,
+                    frequency TEXT,
+                    has_workaround INTEGER,
+                    root_cause_hint TEXT,
+                    business_impact TEXT,
+                    related_feature TEXT,
                     extracted_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (ticket_id) REFERENCES tickets(zendesk_id)
                 );
@@ -92,8 +99,10 @@ class SQLiteStorage:
     def save_issue(self, ticket_id: int, issue: dict):
         with self._get_conn() as conn:
             conn.execute("""
-                INSERT INTO issues (ticket_id, category, issue_type, severity, summary, detail, confidence)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO issues (ticket_id, category, issue_type, severity, summary, detail, confidence,
+                                    user_segment, platform, frequency, has_workaround, root_cause_hint,
+                                    business_impact, related_feature)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 ticket_id,
                 issue.get("category"),
@@ -102,6 +111,13 @@ class SQLiteStorage:
                 issue.get("summary"),
                 issue.get("detail"),
                 issue.get("confidence"),
+                issue.get("user_segment"),
+                issue.get("platform"),
+                issue.get("frequency"),
+                1 if issue.get("has_workaround") else (0 if issue.get("has_workaround") is False else None),
+                issue.get("root_cause_hint"),
+                issue.get("business_impact"),
+                issue.get("related_feature"),
             ))
 
     def get_unanalyzed_tickets(self) -> list[dict]:
@@ -198,6 +214,13 @@ class PostgresStorage:
                         summary TEXT,
                         detail TEXT,
                         confidence REAL,
+                        user_segment TEXT,
+                        platform TEXT,
+                        frequency TEXT,
+                        has_workaround BOOLEAN,
+                        root_cause_hint TEXT,
+                        business_impact TEXT,
+                        related_feature TEXT,
                         extracted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
 
@@ -242,8 +265,10 @@ class PostgresStorage:
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO issues (ticket_id, category, issue_type, severity, summary, detail, confidence)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO issues (ticket_id, category, issue_type, severity, summary, detail, confidence,
+                                        user_segment, platform, frequency, has_workaround, root_cause_hint,
+                                        business_impact, related_feature)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     ticket_id,
                     issue.get("category"),
@@ -252,6 +277,13 @@ class PostgresStorage:
                     issue.get("summary"),
                     issue.get("detail"),
                     issue.get("confidence"),
+                    issue.get("user_segment"),
+                    issue.get("platform"),
+                    issue.get("frequency"),
+                    issue.get("has_workaround"),
+                    issue.get("root_cause_hint"),
+                    issue.get("business_impact"),
+                    issue.get("related_feature"),
                 ))
             conn.commit()
 

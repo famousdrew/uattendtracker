@@ -68,10 +68,26 @@ For issues found:
             "severity": "severity_from_list",
             "summary": "Specific one-line summary with key details",
             "detail": "Fuller explanation including context, impact, and any error messages",
-            "confidence": 0.0-1.0
+            "confidence": 0.0-1.0,
+            "user_segment": "admin|manager|employee|unknown",
+            "platform": "BN6500|MN1000|mobile_app|web|api|unknown",
+            "frequency": "one_time|intermittent|consistent|unknown",
+            "has_workaround": true|false|null,
+            "root_cause_hint": "Brief hypothesis about root cause if apparent",
+            "business_impact": "How this affects the customer's operations",
+            "related_feature": "Specific feature name like 'GPS punch', 'overtime calc', 'RFID enrollment'"
         }}
     ]
-}}"""
+}}
+
+ADDITIONAL CONTEXT GUIDELINES:
+- user_segment: Who is experiencing the issue - admin (account owner), manager (supervisor), or employee (regular user)
+- platform: Be specific about device model (BN6500, BN6000N, MN1000, CB4000, JR1000, DR1000) or platform (mobile_app, web, api)
+- frequency: one_time (happened once), intermittent (sometimes), consistent (always happens)
+- has_workaround: Did the support thread mention a workaround the customer could use?
+- root_cause_hint: Your hypothesis - could be "network connectivity", "firmware version", "permission settings", "data sync delay", etc.
+- business_impact: Describe operational impact - "employees can't clock in", "payroll delayed", "manager can't approve timecards"
+- related_feature: Specific feature affected - be granular like "fingerprint enrollment", "break deductions", "PTO accrual""""
 
 
 class Analyzer:

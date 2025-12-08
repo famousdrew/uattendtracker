@@ -212,6 +212,45 @@
                             <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Detail</div>
                             <div class="text-slate-300 bg-slate-700/50 rounded-lg p-3">{{ selectedIssue.detail }}</div>
                         </div>
+
+                        <!-- Product Context Section -->
+                        <div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-700">
+                            <div v-if="selectedIssue.platform">
+                                <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Platform</div>
+                                <div class="text-slate-200">{{ selectedIssue.platform }}</div>
+                            </div>
+                            <div v-if="selectedIssue.user_segment">
+                                <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">User Segment</div>
+                                <div class="text-slate-200 capitalize">{{ selectedIssue.user_segment }}</div>
+                            </div>
+                            <div v-if="selectedIssue.frequency">
+                                <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Frequency</div>
+                                <span :class="frequencyBadge(selectedIssue.frequency)" class="px-2 py-1 text-xs rounded-full">
+                                    {{ selectedIssue.frequency }}
+                                </span>
+                            </div>
+                            <div v-if="selectedIssue.has_workaround !== null">
+                                <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Workaround</div>
+                                <span :class="selectedIssue.has_workaround ? 'text-emerald-400' : 'text-red-400'">
+                                    {{ selectedIssue.has_workaround ? 'Available' : 'None' }}
+                                </span>
+                            </div>
+                            <div v-if="selectedIssue.related_feature" class="col-span-2">
+                                <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Related Feature</div>
+                                <div class="text-slate-200">{{ selectedIssue.related_feature }}</div>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedIssue.business_impact" class="pt-4 border-t border-slate-700">
+                            <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Business Impact</div>
+                            <div class="text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">{{ selectedIssue.business_impact }}</div>
+                        </div>
+
+                        <div v-if="selectedIssue.root_cause_hint" class="pt-4 border-t border-slate-700">
+                            <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Root Cause Hypothesis</div>
+                            <div class="text-slate-300 bg-slate-700/50 rounded-lg p-3 italic">{{ selectedIssue.root_cause_hint }}</div>
+                        </div>
+
                         <div>
                             <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Confidence</div>
                             <div class="flex items-center gap-2">
@@ -324,6 +363,13 @@
                         'bg-red-500/20 text-red-400 border border-red-500/30': sev === 'critical' || sev === 'high',
                         'bg-amber-500/20 text-amber-400 border border-amber-500/30': sev === 'medium',
                         'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30': sev === 'low'
+                    };
+                },
+                frequencyBadge(freq) {
+                    return {
+                        'bg-red-500/20 text-red-400 border border-red-500/30': freq === 'consistent',
+                        'bg-amber-500/20 text-amber-400 border border-amber-500/30': freq === 'intermittent',
+                        'bg-slate-500/20 text-slate-400 border border-slate-500/30': freq === 'one_time' || freq === 'unknown'
                     };
                 }
             },
