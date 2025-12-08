@@ -1,0 +1,10 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "mvp/Dockerfile"
+watchPatterns = ["mvp/**"]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
