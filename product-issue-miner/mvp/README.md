@@ -113,3 +113,4 @@ MVP uses SQLite (`mvp_data.db`) for simplicity. For production:
 - No scheduled sync (manual trigger only)
 
 Upgrade path: Add PostgreSQL, auth, and cron job for production.
+# Trigger deploy Sun, Dec  7, 2025  4:56:24 PM
