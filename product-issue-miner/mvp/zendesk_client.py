@@ -23,10 +23,10 @@ class ZendeskClient:
 
         Note: Zendesk search API limits to 1000 results (10 pages).
         For large date ranges, we fetch in smaller chunks to get all tickets.
-        With ~1200 tickets/week, we use 5-day chunks to stay under 1000 limit.
+        With ~240 tickets/day, we use 3-day chunks to stay under 1000 limit.
         """
         all_tickets = []
-        chunk_days = 5  # ~850 tickets per chunk at 1200/week rate
+        chunk_days = 3  # ~720 tickets per chunk at 240/day rate
 
         # For ranges > chunk size, split into smaller intervals
         if days_back > chunk_days:
