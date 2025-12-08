@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - 'mvp/**'
+      - 'railway.toml'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:  # Allow manual trigger
 
@@ -21,7 +22,6 @@ jobs:
         run: npm install -g @railway/cli
 
       - name: Deploy to Railway
-        run: railway up --service ${{ vars.RAILWAY_SERVICE_NAME || 'product-issue-miner' }}
-        working-directory: ./mvp
+        run: railway up --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
