@@ -151,6 +151,11 @@ class SQLiteStorage:
         with self._get_conn() as conn:
             conn.execute("DELETE FROM issues")
 
+    def clear_all(self):
+        with self._get_conn() as conn:
+            conn.execute("DELETE FROM issues")
+            conn.execute("DELETE FROM tickets")
+
 
 class PostgresStorage:
     """PostgreSQL storage for production."""
@@ -302,6 +307,13 @@ class PostgresStorage:
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM issues")
+            conn.commit()
+
+    def clear_all(self):
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM issues")
+                cur.execute("DELETE FROM tickets")
             conn.commit()
 
 

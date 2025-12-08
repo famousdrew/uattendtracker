@@ -203,6 +203,14 @@ def list_tickets(limit: int = 50):
     return storage.get_all_tickets()[:limit]
 
 
+@app.delete("/api/data")
+def clear_all_data():
+    """Clear all tickets and issues from the database."""
+    storage = get_storage()
+    storage.clear_all()
+    return {"status": "ok", "message": "All data cleared"}
+
+
 # Serve static frontend
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():

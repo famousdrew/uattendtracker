@@ -40,6 +40,12 @@
                         class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400">
                         {{ syncStatus.running ? 'Syncing...' : 'Sync Now' }}
                     </button>
+                    <button
+                        @click="clearAndSync"
+                        :disabled="syncStatus.running"
+                        class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:bg-gray-400">
+                        Clear & Re-sync
+                    </button>
                 </div>
             </div>
             <div v-if="syncStatus.last_result" class="mt-4 p-3 bg-gray-50 rounded text-sm">
@@ -258,6 +264,13 @@
                     });
                     this.syncStatus.running = true;
                     this.startPolling();
+                },
+                async clearAndSync() {
+                    if (!confirm('This will delete all existing data and re-sync. Continue?')) return;
+                    await fetch('/api/data', { method: 'DELETE' });
+                    await this.loadSummary();
+                    await this.loadIssues();
+                    await this.triggerSync();
                 },
                 startPolling() {
                     this.pollInterval = setInterval(async () => {
