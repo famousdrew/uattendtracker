@@ -23,17 +23,19 @@ class ZendeskClient:
 
         Note: Zendesk search API limits to 1000 results (10 pages).
         For large date ranges, we fetch in smaller chunks to get all tickets.
+        With ~1200 tickets/week, we use 5-day chunks to stay under 1000 limit.
         """
         all_tickets = []
+        chunk_days = 5  # ~850 tickets per chunk at 1200/week rate
 
-        # For ranges > 7 days, chunk into weekly intervals to avoid pagination limit
-        if days_back > 7:
+        # For ranges > chunk size, split into smaller intervals
+        if days_back > chunk_days:
             end_date = datetime.utcnow()
             start_date = end_date - timedelta(days=days_back)
 
             current_end = end_date
             while current_end > start_date:
-                current_start = max(current_end - timedelta(days=7), start_date)
+                current_start = max(current_end - timedelta(days=chunk_days), start_date)
                 chunk_tickets = self._fetch_tickets_range(
                     current_start.strftime("%Y-%m-%d"),
                     current_end.strftime("%Y-%m-%d")
@@ -50,6 +52,7 @@ class ZendeskClient:
                     unique_tickets.append(t)
             return unique_tickets
         else:
+            # Small range - fetch directly but still respect the limit
             since_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
             return self._fetch_tickets_range(since_date)
 
