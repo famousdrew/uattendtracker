@@ -1,4 +1,6 @@
-"""Storage layer - supports SQLite (local) and PostgreSQL (production)."""
+"""Storage layer - supports SQLite (local) and PostgreSQL (production).
+Version: 2.0 - Fixed migration for existing databases
+"""
 import os
 import json
 from datetime import datetime
@@ -363,13 +365,18 @@ class PostgresStorage:
         self._extras = psycopg2.extras
         self.database_url = database_url
         self._init_db()
+        self._migrate_db()
 
     def _get_conn(self):
         return self._psycopg2.connect(self.database_url)
 
     def _init_db(self):
+        """Create base tables if they don't exist. New columns/tables are handled by _migrate_db."""
+        print("[INIT_DB] v2 - Creating base tables without theme columns")
         with self._get_conn() as conn:
             with conn.cursor() as cur:
+                # Create base tables - DO NOT include new columns here as they break existing DBs
+                # New columns (problem_statement, theme_id) and themes table are added by _migrate_db
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS tickets (
                         id SERIAL PRIMARY KEY,
@@ -393,7 +400,6 @@ class PostgresStorage:
                         severity TEXT,
                         summary TEXT,
                         detail TEXT,
-                        problem_statement TEXT,
                         confidence REAL,
                         user_segment TEXT,
                         platform TEXT,
@@ -402,37 +408,73 @@ class PostgresStorage:
                         root_cause_hint TEXT,
                         business_impact TEXT,
                         related_feature TEXT,
-                        theme_id INTEGER,
                         extracted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-
-                    CREATE TABLE IF NOT EXISTS themes (
-                        id SERIAL PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        product_area TEXT,
-                        summary TEXT,
-                        specific_feedback TEXT,
-                        representative_quotes TEXT,
-                        feature_workflow TEXT,
-                        issue_count INTEGER DEFAULT 0,
-                        unique_customers INTEGER DEFAULT 0,
-                        first_seen TIMESTAMP,
-                        last_seen TIMESTAMP,
-                        trend_7d_pct REAL,
-                        pm_status TEXT DEFAULT 'new',
-                        pm_notes TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
 
                     CREATE INDEX IF NOT EXISTS idx_tickets_zendesk_id ON tickets(zendesk_id);
                     CREATE INDEX IF NOT EXISTS idx_issues_ticket_id ON issues(ticket_id);
                     CREATE INDEX IF NOT EXISTS idx_issues_category ON issues(category);
                     CREATE INDEX IF NOT EXISTS idx_issues_severity ON issues(severity);
-                    CREATE INDEX IF NOT EXISTS idx_issues_theme_id ON issues(theme_id);
-                    CREATE INDEX IF NOT EXISTS idx_themes_product_area ON themes(product_area);
                 """)
             conn.commit()
+
+    def _migrate_db(self):
+        """Add new columns to existing tables if they don't exist."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    # Check and add problem_statement column to issues
+                    cur.execute("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = 'issues' AND column_name = 'problem_statement'
+                    """)
+                    if not cur.fetchone():
+                        print("[MIGRATE] Adding problem_statement column to issues table")
+                        cur.execute("ALTER TABLE issues ADD COLUMN problem_statement TEXT")
+
+                    # Check and add theme_id column to issues
+                    cur.execute("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = 'issues' AND column_name = 'theme_id'
+                    """)
+                    if not cur.fetchone():
+                        print("[MIGRATE] Adding theme_id column to issues table")
+                        cur.execute("ALTER TABLE issues ADD COLUMN theme_id INTEGER")
+
+                    # Check if themes table exists
+                    cur.execute("""
+                        SELECT table_name FROM information_schema.tables
+                        WHERE table_name = 'themes'
+                    """)
+                    if not cur.fetchone():
+                        print("[MIGRATE] Creating themes table")
+                        cur.execute("""
+                            CREATE TABLE themes (
+                                id SERIAL PRIMARY KEY,
+                                name TEXT NOT NULL,
+                                product_area TEXT,
+                                summary TEXT,
+                                specific_feedback TEXT,
+                                representative_quotes TEXT,
+                                feature_workflow TEXT,
+                                issue_count INTEGER DEFAULT 0,
+                                unique_customers INTEGER DEFAULT 0,
+                                first_seen TIMESTAMP,
+                                last_seen TIMESTAMP,
+                                trend_7d_pct REAL,
+                                pm_status TEXT DEFAULT 'new',
+                                pm_notes TEXT,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            )
+                        """)
+                        cur.execute("CREATE INDEX IF NOT EXISTS idx_issues_theme_id ON issues(theme_id)")
+                        cur.execute("CREATE INDEX IF NOT EXISTS idx_themes_product_area ON themes(product_area)")
+                conn.commit()
+                print("[MIGRATE] Migration completed successfully")
+        except Exception as e:
+            print(f"[MIGRATE] Migration error: {e}")
+            raise
 
     def upsert_ticket(self, ticket: dict, comments: list[dict] = None):
         with self._get_conn() as conn:
