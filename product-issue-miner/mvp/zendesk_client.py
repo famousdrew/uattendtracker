@@ -19,11 +19,46 @@ class ZendeskClient:
             return response.json()
 
     def fetch_tickets(self, days_back: int = 7) -> list[dict]:
-        """Fetch ALL tickets in date range, optionally filtered by brand."""
-        since_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        """Fetch tickets in date range, optionally filtered by brand.
 
+        Note: Zendesk search API limits to 1000 results (10 pages).
+        For large date ranges, we fetch in smaller chunks to get all tickets.
+        """
+        all_tickets = []
+
+        # For ranges > 7 days, chunk into weekly intervals to avoid pagination limit
+        if days_back > 7:
+            end_date = datetime.utcnow()
+            start_date = end_date - timedelta(days=days_back)
+
+            current_end = end_date
+            while current_end > start_date:
+                current_start = max(current_end - timedelta(days=7), start_date)
+                chunk_tickets = self._fetch_tickets_range(
+                    current_start.strftime("%Y-%m-%d"),
+                    current_end.strftime("%Y-%m-%d")
+                )
+                all_tickets.extend(chunk_tickets)
+                current_end = current_start - timedelta(days=1)
+
+            # Deduplicate by ticket ID
+            seen_ids = set()
+            unique_tickets = []
+            for t in all_tickets:
+                if t["id"] not in seen_ids:
+                    seen_ids.add(t["id"])
+                    unique_tickets.append(t)
+            return unique_tickets
+        else:
+            since_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            return self._fetch_tickets_range(since_date)
+
+    def _fetch_tickets_range(self, start_date: str, end_date: str = None) -> list[dict]:
+        """Fetch tickets in a specific date range."""
         # Build search query
-        query_parts = ["type:ticket", f"created>{since_date}"]
+        query_parts = ["type:ticket", f"created>{start_date}"]
+        if end_date:
+            query_parts.append(f"created<{end_date}")
         if Config.ZENDESK_BRAND_ID:
             query_parts.append(f"brand_id:{Config.ZENDESK_BRAND_ID}")
 
@@ -32,14 +67,17 @@ class ZendeskClient:
         tickets = []
         url = f"{self.base_url}/search.json"
         params = {"query": query, "sort_by": "created_at", "sort_order": "desc"}
+        page_count = 0
+        max_pages = 10  # Zendesk limit
 
         with httpx.Client(auth=self.auth, timeout=30.0) as client:
-            while url:
+            while url and page_count < max_pages:
                 response = client.get(url, params=params)
                 response.raise_for_status()
                 data = response.json()
 
                 tickets.extend(data.get("results", []))
+                page_count += 1
 
                 # Clear params for pagination (next_page includes them)
                 params = None
