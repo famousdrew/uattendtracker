@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Issue Miner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Product Issue Miner</h1>
+            <p class="text-gray-600">Extract and analyze product issues from Zendesk tickets</p>
+        </div>
+
+        <!-- Sync Controls -->
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold">Sync Tickets</h2>
+                    <p class="text-sm text-gray-500">Fetch tickets from Zendesk and analyze with Claude</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <select v-model="syncDays" class="border rounded px-3 py-2">
+                        <option value="1">Last 1 day</option>
+                        <option value="7">Last 7 days</option>
+                        <option value="14">Last 14 days</option>
+                        <option value="30">Last 30 days</option>
+                    </select>
+                    <select v-model="syncLimit" class="border rounded px-3 py-2">
+                        <option value="25">25 tickets</option>
+                        <option value="50">50 tickets</option>
+                        <option value="100">100 tickets</option>
+                    </select>
+                    <button
+                        @click="triggerSync"
+                        :disabled="syncStatus.running"
+                        class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400">
+                        {{ syncStatus.running ? 'Syncing...' : 'Sync Now' }}
+                    </button>
+                </div>
+            </div>
+            <div v-if="syncStatus.last_result" class="mt-4 p-3 bg-gray-50 rounded text-sm">
+                <span v-if="syncStatus.last_result.success" class="text-green-600">
+                    Last sync: {{ syncStatus.last_result.tickets_synced }} tickets,
+                    {{ syncStatus.last_result.issues_extracted }} issues extracted
+                </span>
+                <span v-else class="text-red-600">
+                    Sync failed: {{ syncStatus.last_result.error }}
+                </span>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-3xl font-bold text-gray-800">{{ summary.total_tickets }}</div>
+                <div class="text-sm text-gray-500">Total Tickets</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-3xl font-bold text-gray-800">{{ summary.total_issues }}</div>
+                <div class="text-sm text-gray-500">Issues Found</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-3xl font-bold text-red-600">{{ highCount }}</div>
+                <div class="text-sm text-gray-500">High Severity</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <div class="text-3xl font-bold text-yellow-600">{{ mediumCount }}</div>
+                <div class="text-sm text-gray-500">Medium Severity</div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <!-- By Category -->
+            <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-semibold mb-3">By Category</h3>
+                <div v-for="cat in summary.by_category" :key="cat.category" class="flex justify-between py-1">
+                    <span class="text-sm">{{ cat.category }}</span>
+                    <span class="text-sm font-medium">{{ cat.count }}</span>
+                </div>
+            </div>
+            <!-- By Severity -->
+            <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-semibold mb-3">By Severity</h3>
+                <div v-for="sev in summary.by_severity" :key="sev.severity" class="flex justify-between py-1">
+                    <span class="text-sm" :class="severityColor(sev.severity)">{{ sev.severity }}</span>
+                    <span class="text-sm font-medium">{{ sev.count }}</span>
+                </div>
+            </div>
+            <!-- By Type -->
+            <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-semibold mb-3">By Type</h3>
+                <div v-for="typ in summary.by_type" :key="typ.issue_type" class="flex justify-between py-1">
+                    <span class="text-sm">{{ typ.issue_type }}</span>
+                    <span class="text-sm font-medium">{{ typ.count }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-white rounded-lg shadow p-4 mb-6">
+            <div class="flex gap-4 flex-wrap">
+                <select v-model="filterCategory" @change="loadIssues" class="border rounded px-3 py-2">
+                    <option value="">All Categories</option>
+                    <option v-for="cat in summary.by_category" :value="cat.category">{{ cat.category }}</option>
+                </select>
+                <select v-model="filterSeverity" @change="loadIssues" class="border rounded px-3 py-2">
+                    <option value="">All Severities</option>
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+                <button @click="resetFilters" class="text-blue-600 hover:underline">Reset</button>
+            </div>
+        </div>
+
+        <!-- Issues Table -->
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ticket</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Summary</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    <tr v-for="issue in issues" :key="issue.id" class="hover:bg-gray-50 cursor-pointer" @click="selectIssue(issue)">
+                        <td class="px-4 py-3 text-sm text-gray-600">#{{ issue.zendesk_id }}</td>
+                        <td class="px-4 py-3 text-sm">{{ issue.category }}</td>
+                        <td class="px-4 py-3">
+                            <span :class="severityBadge(issue.severity)" class="px-2 py-1 text-xs rounded-full">
+                                {{ issue.severity }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-sm">{{ issue.issue_type }}</td>
+                        <td class="px-4 py-3 text-sm">{{ issue.summary }}</td>
+                    </tr>
+                    <tr v-if="issues.length === 0">
+                        <td colspan="5" class="px-4 py-8 text-center text-gray-500">
+                            No issues found. Try syncing some tickets.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Issue Detail Modal -->
+        <div v-if="selectedIssue" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" @click.self="selectedIssue = null">
+            <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+                <div class="p-6">
+                    <div class="flex justify-between items-start mb-4">
+                        <h2 class="text-xl font-semibold">Issue Details</h2>
+                        <button @click="selectedIssue = null" class="text-gray-400 hover:text-gray-600">&times;</button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <div class="text-sm text-gray-500">Ticket</div>
+                            <div class="font-medium">#{{ selectedIssue.zendesk_id }} - {{ selectedIssue.ticket_subject }}</div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <div class="text-sm text-gray-500">Category</div>
+                                <div class="font-medium">{{ selectedIssue.category }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm text-gray-500">Severity</div>
+                                <span :class="severityBadge(selectedIssue.severity)" class="px-2 py-1 text-xs rounded-full">
+                                    {{ selectedIssue.severity }}
+                                </span>
+                            </div>
+                            <div>
+                                <div class="text-sm text-gray-500">Type</div>
+                                <div class="font-medium">{{ selectedIssue.issue_type }}</div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-500">Summary</div>
+                            <div class="font-medium">{{ selectedIssue.summary }}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-500">Detail</div>
+                            <div class="text-gray-700">{{ selectedIssue.detail }}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-500">Confidence</div>
+                            <div class="font-medium">{{ (selectedIssue.confidence * 100).toFixed(0) }}%</div>
+                        </div>
+                        <div class="pt-4 border-t">
+                            <a :href="'https://workwelltech.zendesk.com/agent/tickets/' + selectedIssue.zendesk_id"
+                               target="_blank"
+                               class="text-blue-600 hover:underline">
+                                View in Zendesk &rarr;
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    summary: { total_tickets: 0, total_issues: 0, by_category: [], by_severity: [], by_type: [] },
+                    issues: [],
+                    syncStatus: { running: false, last_result: null },
+                    syncDays: '7',
+                    syncLimit: '50',
+                    filterCategory: '',
+                    filterSeverity: '',
+                    selectedIssue: null,
+                    pollInterval: null
+                }
+            },
+            computed: {
+                highCount() {
+                    const high = this.summary.by_severity.find(s => s.severity === 'high');
+                    const critical = this.summary.by_severity.find(s => s.severity === 'critical');
+                    return (high?.count || 0) + (critical?.count || 0);
+                },
+                mediumCount() {
+                    const med = this.summary.by_severity.find(s => s.severity === 'medium');
+                    return med?.count || 0;
+                }
+            },
+            methods: {
+                async loadSummary() {
+                    const res = await fetch('/api/summary');
+                    this.summary = await res.json();
+                },
+                async loadIssues() {
+                    let url = '/api/issues?limit=100';
+                    if (this.filterCategory) url += `&category=${this.filterCategory}`;
+                    if (this.filterSeverity) url += `&severity=${this.filterSeverity}`;
+                    const res = await fetch(url);
+                    this.issues = await res.json();
+                },
+                async loadSyncStatus() {
+                    const res = await fetch('/api/sync/status');
+                    this.syncStatus = await res.json();
+                },
+                async triggerSync() {
+                    await fetch('/api/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ days: parseInt(this.syncDays), limit: parseInt(this.syncLimit) })
+                    });
+                    this.syncStatus.running = true;
+                    this.startPolling();
+                },
+                startPolling() {
+                    this.pollInterval = setInterval(async () => {
+                        await this.loadSyncStatus();
+                        if (!this.syncStatus.running) {
+                            clearInterval(this.pollInterval);
+                            await this.loadSummary();
+                            await this.loadIssues();
+                        }
+                    }, 3000);
+                },
+                resetFilters() {
+                    this.filterCategory = '';
+                    this.filterSeverity = '';
+                    this.loadIssues();
+                },
+                selectIssue(issue) {
+                    this.selectedIssue = issue;
+                },
+                severityColor(sev) {
+                    return {
+                        'text-red-600': sev === 'critical' || sev === 'high',
+                        'text-yellow-600': sev === 'medium',
+                        'text-green-600': sev === 'low'
+                    };
+                },
+                severityBadge(sev) {
+                    return {
+                        'bg-red-100 text-red-800': sev === 'critical' || sev === 'high',
+                        'bg-yellow-100 text-yellow-800': sev === 'medium',
+                        'bg-green-100 text-green-800': sev === 'low'
+                    };
+                }
+            },
+            async mounted() {
+                await this.loadSummary();
+                await this.loadIssues();
+                await this.loadSyncStatus();
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

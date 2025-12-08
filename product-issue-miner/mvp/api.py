@@ -1,8 +1,11 @@
 """Simple FastAPI wrapper for the MVP."""
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from config import Config
@@ -198,6 +201,20 @@ def list_tickets(limit: int = 50):
     """List synced tickets."""
     storage = get_storage()
     return storage.get_all_tickets()[:limit]
+
+
+# Serve static frontend
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+@app.get("/")
+def serve_frontend():
+    """Serve the frontend."""
+    index_file = static_dir / "index.html"
+    if index_file.exists():
+        return FileResponse(str(index_file))
+    return {"message": "Frontend not found. API is running at /api/*"}
 
 
 if __name__ == "__main__":
